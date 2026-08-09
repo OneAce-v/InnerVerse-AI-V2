@@ -1,0 +1,115 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Core user account record",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "description": "User email address" },
+        "fullName": { "type": "string", "description": "Full display name", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "Profile": {
+      "title": "Profile",
+      "description": "User profile and health preferences",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "User owner UID" },
+        "age": { "type": "integer" },
+        "gender": { "type": "string" },
+        "primaryGoal": { "type": "string", "maxLength": 200 },
+        "fitnessLevel": { "type": "string" },
+        "activityLevel": { "type": "string" },
+        "dietType": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId"]
+    },
+    "JournalEntry": {
+      "title": "Journal Entry",
+      "description": "User reflective journal entries and AI sentiment insights",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner UID" },
+        "date": { "type": "string", "description": "Date string YYYY-MM-DD" },
+        "content": { "type": "string", "maxLength": 5000 },
+        "sentiment": { "type": "string" },
+        "mood": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "date", "content", "createdAt"]
+    },
+    "FoodLog": {
+      "title": "Food Log",
+      "description": "Log of consumed nutrition and macronutrient values",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "item": { "type": "string", "maxLength": 200 },
+        "calories": { "type": "integer" },
+        "protein": { "type": "integer" },
+        "carbs": { "type": "integer" },
+        "fats": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "item", "createdAt"]
+    },
+    "ExerciseLog": {
+      "title": "Exercise Log",
+      "description": "Log of physical workouts and exercise activities",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "exercise": { "type": "string", "maxLength": 200 },
+        "durationMins": { "type": "integer" },
+        "caloriesBurned": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "exercise", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User alert or notification message",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "message", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Public/Private user account document"
+    },
+    "/users/{userId}/profiles/{profileId}": {
+      "schema": { "$ref": "#/entities/Profile" },
+      "description": "User profile metadata"
+    },
+    "/users/{userId}/journalEntries/{entryId}": {
+      "schema": { "$ref": "#/entities/JournalEntry" },
+      "description": "User journal entries"
+    },
+    "/users/{userId}/foodLogs/{logId}": {
+      "schema": { "$ref": "#/entities/FoodLog" },
+      "description": "Nutritional intake logs"
+    },
+    "/users/{userId}/exerciseLogs/{logId}": {
+      "schema": { "$ref": "#/entities/ExerciseLog" },
+      "description": "Workout logs"
+    },
+    "/users/{userId}/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "User notifications"
+    }
+  }
+}

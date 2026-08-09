@@ -1,0 +1,6 @@
+{
+  "name": "InnerVerse AI",
+  "description": "An autonomous multi-agent Life Operating System and digital twin platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
