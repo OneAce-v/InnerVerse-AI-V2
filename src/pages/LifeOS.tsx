@@ -33,6 +33,23 @@ export default function LifeOS() {
     }
   };
 
+  const [syncing, setSyncing] = useState(false);
+  const handleForceSync = async () => {
+    setSyncing(true);
+    try {
+      const token = await getToken();
+      await fetch("/api/digital-twin/recalibrate", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      await loadData();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   if (loading) {
     return <div className="p-8 flex justify-center items-center h-full"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
   }
@@ -86,7 +103,7 @@ export default function LifeOS() {
                  <p className="text-2xl font-black font-mono mt-1 text-amber-500">{data?.pendingTasks}</p>
               </div>
               <div className="p-4 bg-muted/30 border border-border rounded-xl flex items-center justify-center">
-                 <Button variant="outline" size="sm" className="w-full font-bold border-dashed border-2"><PlayCircle className="w-4 h-4 mr-2" /> Force Sync</Button>
+                 <Button onClick={handleForceSync} disabled={syncing} variant="outline" size="sm" className="w-full font-bold border-dashed border-2"><PlayCircle className="w-4 h-4 mr-2" /> {syncing ? "Syncing..." : "Force Sync"}</Button>
               </div>
             </div>
 

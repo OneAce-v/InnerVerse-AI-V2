@@ -33,6 +33,22 @@ export default function Cognition() {
     }
   };
 
+  const handleDesignExperiment = async () => {
+    const hypothesis = window.prompt("What hypothesis do you want to test?");
+    if (!hypothesis || !hypothesis.trim()) return;
+    try {
+      const token = await getToken();
+      await fetch("/api/cognition/experiments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ hypothesis: hypothesis.trim() })
+      });
+      loadData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   if (loading) {
     return <div className="p-8 flex justify-center items-center h-full"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
   }
@@ -191,7 +207,7 @@ export default function Cognition() {
                          )}
                       </div>
                     ))}
-                    <Button variant="outline" className="w-full border-dashed"><FileSpreadsheet className="w-4 h-4 mr-2" /> Design New Experiment</Button>
+                    <Button onClick={handleDesignExperiment} variant="outline" className="w-full border-dashed"><FileSpreadsheet className="w-4 h-4 mr-2" /> Design New Experiment</Button>
                  </div>
               </CardContent>
             </Card>

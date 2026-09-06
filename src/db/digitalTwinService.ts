@@ -1,8 +1,9 @@
 import { db } from "./index.ts";
-import { digitalTwins, digitalTwinSnapshots, profiles, foodLogs, exerciseLogs, journalEntries, users } from "./schema.ts";
-import { eq, desc, sql } from "drizzle-orm";
+import { digitalTwins, digitalTwinSnapshots, profiles, foodLogs, exerciseLogs, journalEntries, users, cognitiveMemory, wearableConnections } from "./schema.ts";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { GoogleGenAI } from "@google/genai";
 import { executeSpecialist, executeConsolidatedSpecialists } from "../agents/specialists.ts";
+import { recordAiCall } from "../lib/aiMetrics.ts";
 
 // Initialize Gemini API
 const ai = new GoogleGenAI({
@@ -15,16 +16,20 @@ const ai = new GoogleGenAI({
 });
 
 async function generateContentWithRetry(params: any, retries = 2, delay = 1000): Promise<any> {
+  const start = Date.now();
   for (let i = 0; i < retries; i++) {
     try {
-      return await ai.models.generateContent(params);
+      const result = await ai.models.generateContent(params);
+      recordAiCall(Date.now() - start, false);
+      return result;
     } catch (error: any) {
       const errorStr = String(error?.message || error || "");
       console.warn(`[Gemini Retry DigitalTwin] Attempt ${i + 1} failed. Error:`, errorStr);
-      const isTransient = error.status === 503 || error.status === 429 || errorStr.includes("503") || errorStr.includes("429") || errorStr.includes("demand") || errorStr.includes("temporary") || errorStr.includes("UNAVAILABLE");
+      const isTransient = error?.status === 503 || error?.status === 429 || errorStr.includes("503") || errorStr.includes("429") || errorStr.includes("demand") || errorStr.includes("temporary") || errorStr.includes("UNAVAILABLE");
       if (isTransient && i < retries - 1) {
         await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
       } else {
+        recordAiCall(Date.now() - start, true);
         throw error;
       }
     }
@@ -577,12 +582,14 @@ export async function recalibrateDigitalTwin(userId: number, triggerSource: stri
 
     const currentStates = await getDigitalTwin(userId);
 
+    const connectedWearables = await db.select().from(wearableConnections).where(and(eq(wearableConnections.userId, userId), eq(wearableConnections.connected, true)));
+
     // Objective 4: Algorithmic confidence mapping
     const confidenceAnalysis = compileEvidenceConfidence(
       recentFood.length,
       recentExercise.length,
       recentJournal.length,
-      false // default to false unless wearable integration is activated
+      connectedWearables.length > 0
     );
 
     // Identify missing data sources for research logs
@@ -590,7 +597,7 @@ export async function recalibrateDigitalTwin(userId: number, triggerSource: stri
     if (recentFood.length === 0) missingSources.push("FoodLogs");
     if (recentExercise.length === 0) missingSources.push("ExerciseLogs");
     if (recentJournal.length === 0) missingSources.push("JournalEntries");
-    missingSources.push("Wearables"); // Wearables default as missing
+    if (connectedWearables.length === 0) missingSources.push("Wearables");
 
     // 2. Execute specialized agents via consolidated council to avoid rate limits
     console.log(`[Multi-Agent Recalibration] Executing specialized agents via consolidated council for user ${userId}...`);
@@ -872,6 +879,16 @@ Generate the output as a clean, standardized JSON object where keys are EXACTLY 
       overallHealth.confidenceAdjustedScore,
       `Comprehensive digital twin recalibration executed successfully in ${calibrationDurationMs}ms. Overall health compiled as ${overallHealth.score}.`
     );
+
+    // Record a semantic cognitive memory: this recalibration is consolidated, long-term
+    // knowledge about the user (surfaced on the Cognition dashboard's Memory tab).
+    await db.insert(cognitiveMemory).values({
+      userId,
+      memoryType: "semantic",
+      content: { overallScore: overallHealth.score, confidence: overallHealth.confidenceAdjustedScore, triggerSource },
+      consolidationStatus: "consolidated",
+      importanceScore: 60
+    });
 
     return updatedResult[0].states as any as DigitalTwinModel;
   } catch (error) {

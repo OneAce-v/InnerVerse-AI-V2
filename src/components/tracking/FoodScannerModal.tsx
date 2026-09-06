@@ -1,8 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "../ui/button.tsx";
-import { Input } from "../ui/input.tsx";
-import { Camera, ScanBarcode, X, RefreshCw, Sparkles } from "lucide-react";
+import { Camera, ScanBarcode, X, RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
 import { useAuth } from "../../AuthContext.tsx";
 
 interface FoodScannerModalProps {
@@ -12,15 +11,6 @@ interface FoodScannerModalProps {
   type: "camera" | "barcode";
 }
 
-const scanPresets = [
-  "Grilled Salmon with Avocado and Quinoa",
-  "Fresh Fruit Salad with Greek Yogurt",
-  "Chicken Breast with Brown Rice and Broccoli",
-  "Whole Wheat Toast with Eggs and Spinach",
-  "Whey Protein Shake with Peanut Butter",
-  "Mixed Nuts and Pumpkin Seeds (50g)"
-];
-
 export default function FoodScannerModal({
   isOpen,
   onClose,
@@ -28,53 +18,87 @@ export default function FoodScannerModal({
   type,
 }: FoodScannerModalProps) {
   const { getToken } = useAuth();
-  const [scanningActive, setScanningActive] = useState(false);
-  const [scanStatus, setScanStatus] = useState("");
-  const [selectedScanPreset, setSelectedScanPreset] = useState("Grilled Salmon with Avocado and Quinoa");
-  const [customScanText, setCustomScanText] = useState("");
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  const handlePerformFoodScan = async (mealText: string) => {
-    setScanningActive(true);
-    setScanStatus("Initializing high-resolution lens feed...");
-    
-    setTimeout(() => {
-      setScanStatus("Registering item contours & checking database...");
-    }, 800);
+  const [cameraState, setCameraState] = useState<"requesting" | "live" | "denied" | "unsupported">("requesting");
+  const [analyzing, setAnalyzing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-    setTimeout(() => {
-      setScanStatus("Estimating caloric density & macronuclear contents via Gemini Vision...");
-    }, 1600);
+  useEffect(() => {
+    if (!isOpen) return;
 
-    setTimeout(async () => {
-      try {
-        const token = await getToken();
-        const res = await fetch("/api/track/food", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({ input: mealText })
-        });
-        const data = await res.json();
-        if (data.log) {
-          const visLog = { ...data.log, source: "camera", confidence: Math.floor(Math.random() * 12) + 87 };
-          onFoodLogged(visLog);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraState("unsupported");
+      return;
+    }
+
+    setCameraState("requesting");
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: "environment" } })
+      .then((stream) => {
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
         }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setScanningActive(false);
+        setCameraState("live");
+      })
+      .catch(() => {
+        setCameraState("denied");
+      });
+
+    return () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    };
+  }, [isOpen]);
+
+  const handleCapture = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+    setAnalyzing(true);
+    setErrorMessage(null);
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/track/food/vision", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ imageBase64: dataUrl, mimeType: "image/jpeg" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMessage(data.error || "Analysis failed. Please try again.");
+        return;
+      }
+      if (data.log) {
+        onFoodLogged(data.log);
         onClose();
       }
-    }, 2800);
+    } catch (e) {
+      console.error(e);
+      setErrorMessage("Network error while analyzing the photo.");
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   return (
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 bg-background/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -88,7 +112,7 @@ export default function FoodScannerModal({
                   <ScanBarcode className="w-6 h-6 text-primary animate-pulse" />
                 )}
                 <h3 className="text-xl font-bold">
-                  {type === "camera" ? "AI Vision Camera Scanner" : "AI Barcode Laser Scan"}
+                  {type === "camera" ? "AI Vision Camera Scanner" : "AI Barcode / Label Scanner"}
                 </h3>
               </div>
               <Button variant="ghost" size="icon" className="w-8 h-8 rounded-full" onClick={onClose}>
@@ -96,100 +120,61 @@ export default function FoodScannerModal({
               </Button>
             </div>
 
-            {/* Viewfinder simulation */}
-            <div className="bg-black aspect-video rounded-xl relative overflow-hidden border border-border flex flex-col justify-between p-4 mb-6">
-              {/* Visual Camera Frames */}
-              <div className="absolute top-4 left-4 w-4 h-4 border-t-2 border-l-2 border-primary/60"></div>
-              <div className="absolute top-4 right-4 w-4 h-4 border-t-2 border-r-2 border-primary/60"></div>
-              <div className="absolute bottom-4 left-4 w-4 h-4 border-b-2 border-l-2 border-primary/60"></div>
-              <div className="absolute bottom-4 right-4 w-4 h-4 border-b-2 border-r-2 border-primary/60"></div>
-
-              {/* Laser scan lines */}
-              {scanningActive && (
-                <motion.div 
-                  animate={{ y: [0, 160, 0] }}
-                  transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                  className="absolute inset-x-0 h-0.5 bg-primary/70 shadow-[0_0_10px_#4f46e5]"
-                />
+            <div className="bg-black aspect-video rounded-xl relative overflow-hidden border border-border flex flex-col justify-between mb-6">
+              {cameraState === "live" && (
+                <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
               )}
+              <canvas ref={canvasRef} className="hidden" />
 
-              {/* Simulated object focus box */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className={`w-32 h-32 border-2 border-dashed rounded-lg transition-colors flex items-center justify-center ${scanningActive ? "border-primary animate-ping" : "border-white/30"}`}>
-                  <span className="text-[10px] text-white/50 bg-black/40 px-1.5 py-0.5 rounded uppercase font-mono tracking-widest">
-                    {type === "camera" ? "Focus Point" : "Align barcode"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="w-full flex justify-between items-start text-white/75 relative z-10 text-[10px] font-mono">
-                <span>ISO 400 • F2.8</span>
-                <span>{type === "camera" ? "PLATE_DETECTION_ON" : "EAN_13_READING"}</span>
-              </div>
-
-              {scanningActive ? (
-                <div className="bg-black/80 backdrop-blur-sm self-center text-center p-3 rounded-lg border border-primary/30 max-w-sm w-full mx-auto space-y-2 relative z-10">
-                  <RefreshCw className="w-5 h-5 text-primary animate-spin mx-auto" />
-                  <p className="text-xs font-semibold text-white">{scanStatus}</p>
-                </div>
-              ) : (
-                <div className="bg-black/40 backdrop-blur-xs self-end text-center p-2 rounded text-[11px] text-white/90 relative z-10">
-                  Pointing at: <span className="font-bold text-primary">{selectedScanPreset}</span>
+              {cameraState === "requesting" && (
+                <div className="absolute inset-0 flex items-center justify-center text-white/70 text-sm gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin" /> Requesting camera access...
                 </div>
               )}
-              
-              <div className="relative z-10 self-end text-[9px] text-white/30 font-mono">
-                <span>INNERVERSE-VISION v2.5</span>
-              </div>
+              {cameraState === "denied" && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white/80 text-sm gap-2 p-6 text-center">
+                  <AlertTriangle className="w-6 h-6 text-amber-400" />
+                  Camera access was denied. Allow camera permission in your browser, or log this item manually instead.
+                </div>
+              )}
+              {cameraState === "unsupported" && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white/80 text-sm gap-2 p-6 text-center">
+                  <AlertTriangle className="w-6 h-6 text-amber-400" />
+                  This browser/device doesn't support camera capture. Please log this item manually instead.
+                </div>
+              )}
+
+              {cameraState === "live" && (
+                <>
+                  <div className="absolute top-4 left-4 w-4 h-4 border-t-2 border-l-2 border-primary/60"></div>
+                  <div className="absolute top-4 right-4 w-4 h-4 border-t-2 border-r-2 border-primary/60"></div>
+                  <div className="absolute bottom-4 left-4 w-4 h-4 border-b-2 border-l-2 border-primary/60"></div>
+                  <div className="absolute bottom-4 right-4 w-4 h-4 border-b-2 border-r-2 border-primary/60"></div>
+                </>
+              )}
+
+              {analyzing && (
+                <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center gap-2">
+                  <RefreshCw className="w-5 h-5 text-primary animate-spin" />
+                  <p className="text-xs font-semibold text-white">Analyzing photo with Gemini Vision...</p>
+                </div>
+              )}
             </div>
 
-            {/* Selection Presets to Point Camera At */}
-            {!scanningActive && (
-              <div className="space-y-4">
-                <div className="space-y-2 text-left">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Select healthy food to simulate plate detection:</label>
-                  <div className="grid grid-cols-1 gap-1.5 max-h-[140px] overflow-y-auto pr-1">
-                    {scanPresets.map((preset, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => {
-                          setSelectedScanPreset(preset);
-                          setCustomScanText("");
-                        }}
-                        className={`p-2.5 rounded-lg border text-xs text-left font-medium transition-all flex justify-between items-center ${selectedScanPreset === preset ? "bg-primary/10 border-primary text-foreground" : "border-border hover:bg-muted bg-card/40"}`}
-                      >
-                        <span>{preset}</span>
-                        {selectedScanPreset === preset && <span className="text-primary font-bold">✓ Selected</span>}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Or Manual Custom */}
-                <div className="space-y-1 text-left">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Or enter custom meal target:</label>
-                  <Input 
-                    placeholder="e.g. 1 Chicken Shawarma Wrap" 
-                    value={customScanText} 
-                    onChange={(e) => {
-                      setCustomScanText(e.target.value);
-                      setSelectedScanPreset(e.target.value);
-                    }}
-                    className="text-xs text-foreground bg-muted/40 border-border"
-                  />
-                </div>
-
-                <div className="pt-2">
-                  <Button 
-                    className="w-full font-bold py-5 gap-2" 
-                    disabled={!selectedScanPreset.trim()}
-                    onClick={() => handlePerformFoodScan(selectedScanPreset)}
-                  >
-                    <Sparkles className="w-4 h-4" /> Initialize AI Lens Scan
-                  </Button>
-                </div>
+            {errorMessage && (
+              <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-xs text-red-400">
+                {errorMessage}
               </div>
+            )}
+
+            {!analyzing && (
+              <Button
+                className="w-full font-bold py-5 gap-2"
+                disabled={cameraState !== "live"}
+                onClick={handleCapture}
+              >
+                <Sparkles className="w-4 h-4" /> Capture &amp; Analyze
+              </Button>
             )}
           </motion.div>
         </div>
