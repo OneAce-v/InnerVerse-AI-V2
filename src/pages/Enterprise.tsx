@@ -6,6 +6,16 @@ import { Button } from '../components/ui/button.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Shield, CreditCard, Bell, Cpu, Key, Download, Trash2, CheckCircle2, AlertCircle, Laptop, RefreshCw } from 'lucide-react';
 
+function formatUptime(seconds?: number): string {
+  if (!seconds && seconds !== 0) return "—";
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${Math.floor(seconds % 60)}s`;
+}
+
 export default function Enterprise() {
   const { getToken, user } = useAuth();
   const [activeTab, setActiveTab] = useState<"billing" | "health" | "notifications" | "security" | "developer">("billing");
@@ -15,6 +25,9 @@ export default function Enterprise() {
   const [healthData, setHealthData] = useState<any>(null);
   const [notifs, setNotifs] = useState<any[]>([]);
   const [deviceList, setDeviceList] = useState<any[]>([]);
+  const [devKeyInfo, setDevKeyInfo] = useState<any>(null);
+  const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
     loadTabContent();
@@ -45,6 +58,10 @@ export default function Enterprise() {
         const devRes = await fetch("/api/devices", { headers: { Authorization: `Bearer ${token}` } });
         const data = await devRes.json();
         setDeviceList(data.devices || []);
+      } else if (activeTab === "developer") {
+        const keyRes = await fetch("/api/developer/keys", { headers: { Authorization: `Bearer ${token}` } });
+        const data = await keyRes.json();
+        setDevKeyInfo(data);
       }
     } catch (e) {
       console.error(e);
@@ -67,6 +84,25 @@ export default function Enterprise() {
       loadTabContent();
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleRegenerateKey = async () => {
+    if (devKeyInfo?.hasKey && !window.confirm("This will invalidate your existing API key. Continue?")) return;
+    setRegenerating(true);
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/developer/keys/regenerate", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setRevealedKey(data.key);
+      loadTabContent();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -206,20 +242,20 @@ export default function Enterprise() {
           <motion.div key="health" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                <div className="p-4 bg-muted/30 border border-border rounded-xl">
-                  <p className="text-[10px] font-bold uppercase text-muted-foreground">System Uptime</p>
-                  <p className="text-2xl font-black font-mono mt-1 text-green-500">{healthData?.uptime || '99.98%'}</p>
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Process Uptime</p>
+                  <p className="text-2xl font-black font-mono mt-1 text-green-500">{formatUptime(healthData?.uptimeSeconds)}</p>
                </div>
                <div className="p-4 bg-muted/30 border border-border rounded-xl">
-                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Active Microservices</p>
-                  <p className="text-2xl font-black font-mono mt-1 text-primary">{healthData?.activeInstances || 12}</p>
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Active Instances</p>
+                  <p className="text-2xl font-black font-mono mt-1 text-primary">{healthData?.activeInstances ?? 1}</p>
                </div>
                <div className="p-4 bg-muted/30 border border-border rounded-xl">
                   <p className="text-[10px] font-bold uppercase text-muted-foreground">Avg Response Time</p>
-                  <p className="text-2xl font-black font-mono mt-1 text-indigo-400">{healthData?.metrics?.avgResponseTimeMs || 42} ms</p>
+                  <p className="text-2xl font-black font-mono mt-1 text-indigo-400">{healthData?.metrics?.avgResponseTimeMs ?? 0} ms</p>
                </div>
                <div className="p-4 bg-muted/30 border border-border rounded-xl">
                   <p className="text-[10px] font-bold uppercase text-muted-foreground">Error Rate</p>
-                  <p className="text-2xl font-black font-mono mt-1 text-emerald-400">{healthData?.metrics?.errorRate || '0.01%'}</p>
+                  <p className="text-2xl font-black font-mono mt-1 text-emerald-400">{healthData?.metrics?.errorRate ?? '0.00%'}</p>
                </div>
             </div>
 
@@ -234,17 +270,7 @@ export default function Enterprise() {
                            <h4 className="font-bold text-sm">{svc.name}</h4>
                            <span className="text-xs text-muted-foreground font-mono">Latency: {svc.latencyMs}ms</span>
                         </div>
-                        <div className="flex items-center gap-6">
-                           <div className="text-right">
-                              <span className="block text-[10px] uppercase font-bold text-muted-foreground">CPU</span>
-                              <span className="font-mono text-xs font-bold">{svc.cpuUsage}%</span>
-                           </div>
-                           <div className="text-right">
-                              <span className="block text-[10px] uppercase font-bold text-muted-foreground">Memory</span>
-                              <span className="font-mono text-xs font-bold">{svc.memoryUsage}%</span>
-                           </div>
-                           <Badge className="bg-green-500/10 text-green-500 border-green-500/20">{svc.status.toUpperCase()}</Badge>
-                        </div>
+                        <Badge className={svc.status === 'operational' ? "bg-green-500/10 text-green-500 border-green-500/20" : "bg-red-500/10 text-red-500 border-red-500/20"}>{svc.status.replace('_', ' ').toUpperCase()}</Badge>
                      </div>
                   ))}
                </CardContent>
@@ -304,19 +330,21 @@ export default function Enterprise() {
           <motion.div key="developer" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
              <Card className="border-border">
                 <CardHeader>
-                   <CardTitle className="text-lg flex items-center gap-2"><Key className="w-5 h-5 text-amber-500" /> Developer API & Webhook Gateway</CardTitle>
-                   <CardDescription>Connect external wearables, custom apps, or webhooks to InnerVerse AI.</CardDescription>
+                   <CardTitle className="text-lg flex items-center gap-2"><Key className="w-5 h-5 text-amber-500" /> Developer API Key</CardTitle>
+                   <CardDescription>Generate a real, hashed API key for this account. The plaintext key is shown only once, at creation.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                    <div className="p-4 bg-muted/30 border border-border rounded-xl">
-                      <p className="text-xs uppercase font-bold text-muted-foreground mb-1">Production API Key</p>
-                      <code className="text-sm font-mono bg-background p-2 rounded border border-border block overflow-x-auto text-primary">iv_live_9a8f27c38d1e42a9b01c7f5e3d2a1b0c</code>
+                      <p className="text-xs uppercase font-bold text-muted-foreground mb-1">
+                        {revealedKey ? "New API Key (copy it now — it won't be shown again)" : devKeyInfo?.hasKey ? "Active API Key" : "No API Key Yet"}
+                      </p>
+                      <code className="text-sm font-mono bg-background p-2 rounded border border-border block overflow-x-auto text-primary">
+                        {revealedKey || devKeyInfo?.keyPreview || "Generate a key to get started"}
+                      </code>
                    </div>
-                   <div className="p-4 bg-muted/30 border border-border rounded-xl">
-                      <p className="text-xs uppercase font-bold text-muted-foreground mb-1">Webhook Endpoint</p>
-                      <code className="text-sm font-mono bg-background p-2 rounded border border-border block overflow-x-auto">https://api.innerverse.ai/v1/webhooks/ingest</code>
-                   </div>
-                   <Button variant="outline" className="font-bold flex items-center gap-2"><RefreshCw className="w-4 h-4" /> Regenerate Keys</Button>
+                   <Button onClick={handleRegenerateKey} disabled={regenerating} variant="outline" className="font-bold flex items-center gap-2">
+                     <RefreshCw className="w-4 h-4" /> {regenerating ? "Generating..." : devKeyInfo?.hasKey ? "Regenerate Key" : "Generate Key"}
+                   </Button>
                 </CardContent>
              </Card>
           </motion.div>

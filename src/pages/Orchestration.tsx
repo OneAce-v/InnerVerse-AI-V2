@@ -43,6 +43,36 @@ export default function Orchestration() {
     }
   };
 
+  const handleDefineMission = async () => {
+    const title = window.prompt("Mission title:");
+    if (!title || !title.trim()) return;
+    const vision = window.prompt("Vision statement (optional):") || "";
+    try {
+      const token = await getToken();
+      await fetch("/api/orchestration/missions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title, vision })
+      });
+      loadData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleCompleteTask = async (planId: number) => {
+    try {
+      const token = await getToken();
+      await fetch(`/api/orchestration/tasks/${planId}/complete`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setPlans(prev => prev.filter(p => p.id !== planId));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleDecisionAnalysis = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!decisionQuery.trim()) return;
@@ -123,7 +153,7 @@ export default function Orchestration() {
                     </div>
                   </div>
                 ))}
-                <Button className="w-full border-dashed border-2 bg-transparent text-foreground hover:bg-muted/50" variant="outline">+ Define New Mission</Button>
+                <Button onClick={handleDefineMission} className="w-full border-dashed border-2 bg-transparent text-foreground hover:bg-muted/50" variant="outline">+ Define New Mission</Button>
               </CardContent>
             </Card>
           </motion.div>
@@ -190,7 +220,7 @@ export default function Orchestration() {
                            <h4 className="font-bold">{plan.title}</h4>
                            <p className="text-xs text-muted-foreground mt-1">Reason: {plan.reason}</p>
                         </div>
-                        <Button variant="outline" size="sm" className="h-8">
+                        <Button onClick={() => handleCompleteTask(plan.id)} variant="outline" size="sm" className="h-8">
                            <CheckCircle className="w-3.5 h-3.5 mr-1" /> Mark Done
                         </Button>
                       </div>

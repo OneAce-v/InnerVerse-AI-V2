@@ -33,6 +33,76 @@ export default function Ecosystem() {
     }
   };
 
+  const handleInviteCollaborator = async () => {
+    const email = window.prompt("Email of the InnerVerse user to invite:");
+    if (!email || !email.trim()) return;
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/ecosystem/collaborators", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email: email.trim() })
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        window.alert(result.error || "Failed to invite collaborator");
+        return;
+      }
+      loadData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRevoke = async (id: number) => {
+    try {
+      const token = await getToken();
+      await fetch(`/api/ecosystem/collaborators/${id}/revoke`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      loadData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAddBiomarker = async () => {
+    const markerName = window.prompt("Biomarker name (e.g. ApoB, HbA1c):");
+    if (!markerName || !markerName.trim()) return;
+    const value = window.prompt("Value:");
+    if (!value) return;
+    const unit = window.prompt("Unit (e.g. mg/dL, %):") || "";
+    try {
+      const token = await getToken();
+      await fetch("/api/ecosystem/biomarkers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ markerName: markerName.trim(), value, unit })
+      });
+      loadData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAddKnowledge = async () => {
+    const title = window.prompt("Document title:");
+    if (!title || !title.trim()) return;
+    const content = window.prompt("Paste the text content to index (optional):") || "";
+    try {
+      const token = await getToken();
+      await fetch("/api/ecosystem/knowledge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: title.trim(), documentType: "personal_note", content })
+      });
+      loadData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   if (loading) {
     return <div className="p-8 flex justify-center items-center h-full"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
   }
@@ -91,10 +161,10 @@ export default function Ecosystem() {
                         ))}
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" className="whitespace-nowrap border-red-500/20 text-red-500 hover:bg-red-500/10">Revoke Access</Button>
+                    <Button onClick={() => handleRevoke(collab.id)} variant="outline" size="sm" className="whitespace-nowrap border-red-500/20 text-red-500 hover:bg-red-500/10">Revoke Access</Button>
                   </div>
                 ))}
-                <Button className="w-full border-dashed border-2 bg-transparent text-foreground hover:bg-muted/50" variant="outline">+ Invite Collaborator</Button>
+                <Button onClick={handleInviteCollaborator} className="w-full border-dashed border-2 bg-transparent text-foreground hover:bg-muted/50" variant="outline">+ Invite Collaborator</Button>
               </CardContent>
             </Card>
           </motion.div>
@@ -123,7 +193,7 @@ export default function Ecosystem() {
                       <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Relevance: {doc.relevance}%</Badge>
                     </div>
                   ))}
-                  <Button variant="secondary" className="w-full mt-2"><FileText className="w-4 h-4 mr-2" /> Upload Document or Sync Library</Button>
+                  <Button onClick={handleAddKnowledge} variant="secondary" className="w-full mt-2"><FileText className="w-4 h-4 mr-2" /> Upload Document or Sync Library</Button>
                 </div>
               </CardContent>
             </Card>
@@ -155,7 +225,7 @@ export default function Ecosystem() {
                   ))}
                 </div>
                 <div className="mt-6 flex justify-center">
-                   <Button variant="outline"><HeartPulse className="w-4 h-4 mr-2" /> Connect EMR Provider</Button>
+                   <Button onClick={handleAddBiomarker} variant="outline"><HeartPulse className="w-4 h-4 mr-2" /> Add Biomarker Reading</Button>
                 </div>
               </CardContent>
             </Card>

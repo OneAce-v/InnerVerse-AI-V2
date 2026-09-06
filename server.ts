@@ -1,14 +1,16 @@
 import express from "express";
 import path from "path";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { requireAuth, AuthRequest } from "./src/middleware/auth.ts";
 import { getOrCreateUser } from "./src/db/users.ts";
 import { db } from "./src/db/index.ts";
-import { profiles, recommendations, foodLogs, exerciseLogs, journalEntries, users, subscriptions, payments, notifications, auditLogs, sessions, devices, systemHealth, usageStatistics } from "./src/db/schema.ts";
-import { eq, sql, desc } from "drizzle-orm";
+import { profiles, recommendations, foodLogs, exerciseLogs, journalEntries, users, subscriptions, payments, notifications, auditLogs, sessions, devices, systemHealth, usageStatistics, questCompletions, lifeMissions, goals, orchestrationTasks, collaborationShares, ragDocuments, biomarkers, cognitiveMemory, researchExperiments, digitalTwinSnapshots, behaviorPatterns, interventionEffectiveness, digitalTwins, apiKeys, wearableConnections } from "./src/db/schema.ts";
+import { eq, and, sql, desc } from "drizzle-orm";
 import { GoogleGenAI } from "@google/genai";
 import { getDigitalTwin, recalibrateDigitalTwin, updateDigitalTwinState, getDigitalTwinHistory, getDigitalTwinDependencies, getDigitalTwinContributors, getDigitalTwinGoals, getDigitalTwinConfidence } from "./src/db/digitalTwinService.ts";
 import { runSupervisor } from "./src/agents/supervisor.ts";
+import { recordAiCall, getAiAverageLatencyMs, aiMetrics } from "./src/lib/aiMetrics.ts";
 
 // Global in-memory caches for API rate limit protection
 const briefingCache: Record<string, { briefing: any; conflictResolutionLog: string; timestamp: number }> = {};
@@ -25,20 +27,64 @@ const ai = new GoogleGenAI({
 });
 
 async function generateContentWithRetry(params: any, retries = 2, delay = 1000): Promise<any> {
+  const start = Date.now();
   for (let i = 0; i < retries; i++) {
     try {
-      return await ai.models.generateContent(params);
+      const result = await ai.models.generateContent(params);
+      recordAiCall(Date.now() - start, false);
+      return result;
     } catch (error: any) {
       const errorStr = String(error?.message || error || "");
       console.warn(`[Gemini Retry] Attempt ${i + 1} failed. Error:`, errorStr);
-      const isTransient = error.status === 503 || error.status === 429 || errorStr.includes("503") || errorStr.includes("429") || errorStr.includes("demand") || errorStr.includes("temporary") || errorStr.includes("UNAVAILABLE");
+      const isTransient = error?.status === 503 || error?.status === 429 || errorStr.includes("503") || errorStr.includes("429") || errorStr.includes("demand") || errorStr.includes("temporary") || errorStr.includes("UNAVAILABLE");
       if (isTransient && i < retries - 1) {
         await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
       } else {
+        recordAiCall(Date.now() - start, true);
         throw error;
       }
     }
   }
+}
+
+// Server-authoritative reward table for the daily quest catalog. The client only ever
+// sends a questId; the actual xp/coins granted always come from here, never the request body.
+const QUEST_REWARDS: Record<string, { xp: number; coins: number }> = {
+  "1": { xp: 50, coins: 10 }, // 10 Min Box Breathing / Bedtime CheckIn
+  "2": { xp: 50, coins: 10 }, // Upper Body Workout
+  "3": { xp: 50, coins: 10 }, // Log First Meal
+};
+
+// Lightweight, dependency-free User-Agent summarizer used to label real tracked devices.
+function describeDevice(userAgent: string): { name: string; type: string } {
+  const ua = userAgent || "";
+  let browser = "Unknown Browser";
+  if (/Edg\//.test(ua)) browser = "Edge";
+  else if (/Chrome\//.test(ua) && !/Chromium/.test(ua)) browser = "Chrome";
+  else if (/Firefox\//.test(ua)) browser = "Firefox";
+  else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) browser = "Safari";
+
+  let os = "Unknown OS";
+  let type = "browser";
+  if (/iPhone|iPad/.test(ua)) { os = "iOS"; type = "mobile"; }
+  else if (/Android/.test(ua)) { os = "Android"; type = "mobile"; }
+  else if (/Mac OS X/.test(ua)) { os = "macOS"; type = "desktop"; }
+  else if (/Windows/.test(ua)) { os = "Windows"; type = "desktop"; }
+  else if (/Linux/.test(ua)) { os = "Linux"; type = "desktop"; }
+
+  return { name: `${browser} on ${os}`, type };
+}
+
+function timeAgo(date: Date | string | null | undefined): string {
+  if (!date) return "Never";
+  const ms = Date.now() - new Date(date).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function calculateLevel(xp: number): number {
@@ -54,11 +100,41 @@ function calculateLevel(xp: number): number {
   return 1;
 }
 
+// Real, process-local request telemetry (not fabricated) used to back /api/admin/health.
+const requestMetrics: { timestamps: number[]; durationsMs: number[]; errorCount: number; totalCount: number } = {
+  timestamps: [],
+  durationsMs: [],
+  errorCount: 0,
+  totalCount: 0,
+};
+
+function recordRequestMetric(durationMs: number, isError: boolean) {
+  const now = Date.now();
+  requestMetrics.timestamps.push(now);
+  requestMetrics.durationsMs.push(durationMs);
+  requestMetrics.totalCount += 1;
+  if (isError) requestMetrics.errorCount += 1;
+  // Keep only the last 5 minutes of samples so the window stays current.
+  const cutoff = now - 5 * 60 * 1000;
+  while (requestMetrics.timestamps.length > 0 && requestMetrics.timestamps[0] < cutoff) {
+    requestMetrics.timestamps.shift();
+    requestMetrics.durationsMs.shift();
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on("finish", () => {
+      recordRequestMetric(Date.now() - start, res.statusCode >= 500);
+    });
+    next();
+  });
 
   // Wait for Cloud SQL proxy to be ready if needed, or define directly
   // In AI Studio, the proxy is launched automatically.
@@ -74,6 +150,21 @@ async function startServer() {
     try {
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
       const user = await getOrCreateUser(req.user.uid, req.user.email || "", req.user.name || "");
+
+      // Track the real device/browser making this request (replaces the previous hardcoded device list).
+      const { name: deviceName, type: deviceType } = describeDevice(req.headers["user-agent"] || "");
+      const deviceValues = {
+        userId: user.id,
+        deviceName,
+        deviceType,
+        lastIp: req.ip || req.socket.remoteAddress || null,
+        lastActiveAt: new Date()
+      };
+      await db.insert(devices).values(deviceValues).onConflictDoUpdate({
+        target: [devices.userId, devices.deviceName],
+        set: deviceValues
+      });
+
       res.json({ user });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -589,7 +680,16 @@ Journal Entry: "${content}"`;
       };
       
       const result = await db.insert(journalEntries).values(dbValues).returning();
-      
+
+      // Record an episodic cognitive memory of this reflection for the Cognition dashboard.
+      await db.insert(cognitiveMemory).values({
+        userId: userResult.id,
+        memoryType: "episodic",
+        content: { date, mood: aiAnalysis.mood, sentiment: aiAnalysis.sentiment, summary: aiAnalysis.summary },
+        consolidationStatus: "raw",
+        importanceScore: aiAnalysis.sentiment === "Negative" ? 70 : 50
+      });
+
       // Update emotional, mental, and stress states in Digital Twin based on sentiment/mood analysis
       await updateDigitalTwinState(userResult.id, "emotional", {
         score: aiAnalysis.sentiment === "Positive" ? 85 : aiAnalysis.sentiment === "Negative" ? 45 : 65,
@@ -712,6 +812,75 @@ Estimate calories, protein (g), carbs (g), and fats (g). Return strictly JSON:
 
       res.json({ log: result[0] });
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Real camera-based food analysis: takes an actual photo (base64 JPEG) captured from the
+  // browser's camera and sends it to Gemini's multimodal vision model. There is no text-based
+  // heuristic fallback here (unlike /api/track/food) because without a real photo analyzed
+  // there is nothing genuine to fall back to — we return a clear error instead of a fake result.
+  app.post("/api/track/food/vision", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const { imageBase64, mimeType } = req.body;
+      if (!imageBase64 || typeof imageBase64 !== "string") {
+        return res.status(400).json({ error: "imageBase64 is required" });
+      }
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+      const cleanBase64 = imageBase64.includes(",") ? imageBase64.split(",")[1] : imageBase64;
+
+      const prompt = `Analyze this photo, which may show a plate of food, a packaged product, or a barcode/nutrition label.
+Identify what it is and estimate calories, protein (g), carbs (g), and fats (g) for a typical serving.
+If you can read any product name or nutrition facts text in the image, use it. Return strictly JSON:
+{"item": "Identified food/product name", "calories": 500, "protein": 30, "carbs": 50, "fats": 20, "confidence": 85}`;
+
+      let analysis: any;
+      try {
+        const response = await generateContentWithRetry({
+          model: "gemini-2.5-flash",
+          contents: [{
+            role: "user",
+            parts: [
+              { text: prompt },
+              { inlineData: { data: cleanBase64, mimeType: mimeType || "image/jpeg" } }
+            ]
+          }],
+          config: { responseMimeType: "application/json" }
+        });
+        analysis = JSON.parse(response.text || "{}");
+      } catch (e) {
+        console.error("[Food Vision] Gemini vision analysis failed:", e);
+        return res.status(502).json({ error: "AI vision analysis is temporarily unavailable. Please use manual/text entry instead." });
+      }
+
+      if (!analysis.item) {
+        return res.status(422).json({ error: "Could not identify a food item in the photo. Try a clearer shot or use manual entry." });
+      }
+
+      const dbValues = {
+        userId: userResult.id,
+        item: analysis.item,
+        calories: analysis.calories || 0,
+        protein: analysis.protein || 0,
+        carbs: analysis.carbs || 0,
+        fats: analysis.fats || 0,
+        confidence: analysis.confidence || 70,
+        source: 'camera'
+      };
+
+      const result = await db.insert(foodLogs).values(dbValues).returning();
+
+      await updateDigitalTwinState(userResult.id, "nutrition", {
+        score: analysis.calories && analysis.calories > 100 ? 75 : 62,
+        supportingEvidence: `Camera-analyzed meal: ${analysis.item} (${analysis.calories || 0} kcal, ${analysis.protein || 0}g P, ${analysis.carbs || 0}g C, ${analysis.fats || 0}g F).`,
+        aiSummary: `Dietary intake updated from AI Lens photo analysis of ${analysis.item}.`
+      });
+      recalibrateDigitalTwin(userResult.id).catch(err => console.error("Twin bg recalibrate fail", err));
+
+      res.json({ log: result[0] });
+    } catch (error: any) {
+      console.error(error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -924,8 +1093,19 @@ Estimate duration in minutes, calories burned, and total volume (if applicable).
     try {
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
       const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-      
+
       const twin = await recalibrateDigitalTwin(userResult.id);
+
+      const score = twin.overallHealthIndex?.score;
+      if (score !== undefined) {
+        await db.insert(notifications).values({
+          userId: userResult.id,
+          title: "Digital Twin Recalibrated",
+          message: `Your Overall Health Index is now ${score}/100. ${twin.overallHealthIndex?.explanation || ""}`.trim(),
+          type: "recommendation"
+        });
+      }
+
       res.json({ twin });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -1111,16 +1291,53 @@ Estimate duration in minutes, calories burned, and total volume (if applicable).
   });
 
   // Quest completion API
+  // Rewards are fixed server-side per quest and granted at most once per quest per day,
+  // so a client can never mint arbitrary XP/coins by replaying this call.
   app.post("/api/quests/complete", requireAuth, async (req: AuthRequest, res) => {
     try {
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
       const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-      const { questId, xpGain = 50, coinsGain = 10 } = req.body;
-      
-      await db.execute(sql`UPDATE profiles SET xp = xp + ${xpGain}, coins = coins + ${coinsGain} WHERE user_id = ${userResult.id}`);
-      
+      const { questId } = req.body;
+
+      if (questId === undefined || questId === null) {
+        return res.status(400).json({ error: "questId is required" });
+      }
+
+      const reward = QUEST_REWARDS[String(questId)];
+      if (!reward) {
+        return res.status(400).json({ error: "Unknown questId" });
+      }
+
+      const today = new Date().toISOString().substring(0, 10);
+      const existing = await db.select().from(questCompletions).where(and(
+        eq(questCompletions.userId, userResult.id),
+        eq(questCompletions.questId, String(questId)),
+        eq(questCompletions.completedDate, today)
+      ));
+
+      if (existing.length === 0) {
+        await db.insert(questCompletions).values({
+          userId: userResult.id,
+          questId: String(questId),
+          completedDate: today,
+          xpAwarded: reward.xp,
+          coinsAwarded: reward.coins
+        }).onConflictDoNothing();
+
+        await db.execute(sql`UPDATE profiles SET xp = xp + ${reward.xp}, coins = coins + ${reward.coins} WHERE user_id = ${userResult.id}`);
+
+        // Record a procedural cognitive memory: completed quests are learned routine/habit loops.
+        await db.insert(cognitiveMemory).values({
+          userId: userResult.id,
+          memoryType: "procedural",
+          content: { questId: String(questId), xpAwarded: reward.xp, coinsAwarded: reward.coins, date: today },
+          consolidationStatus: "consolidated",
+          importanceScore: 40
+        });
+      }
+
       const newProfileResult = await db.select().from(profiles).where(eq(profiles.userId, userResult.id));
-      res.json({ profile: newProfileResult[0] });
+      res.json({ profile: newProfileResult[0], alreadyCompletedToday: existing.length > 0 });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -1156,22 +1373,106 @@ Estimate duration in minutes, calories burned, and total volume (if applicable).
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
       const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
 
-      // Provide mock data for testing orchestration
-      // You can implement DB fetching here when ready
-      res.json({
-        missions: [
-          { id: 1, title: "Peak Physical Vitality", vision: "Achieve and maintain top 5% cardiovascular health and metabolic flexibility for longevity.", alignmentScore: 92 },
-          { id: 2, title: "Cognitive Mastery", vision: "Develop deep focus capabilities and continuous learning loops for professional excellence.", alignmentScore: 85 }
-        ],
-        goals: [
-          { id: 1, title: "Run Sub-20 5K", domain: "exercise", status: "active", progress: 65, priority: 80, target: "2026-10-01" },
-          { id: 2, title: "Complete Advanced AI Course", domain: "learning", status: "planning", progress: 20, priority: 70, target: "2026-12-15" }
-        ],
-        plans: [
-          { id: 1, title: "Morning Deep Work Block", time: "08:00 - 10:00", status: "todo", ai: true, reason: "Circadian peak focus alignment" },
-          { id: 2, title: "Zone 2 Endurance Run", time: "17:00 - 18:00", status: "todo", ai: true, reason: "Weather optimal, 2 days since last run" }
-        ]
-      });
+      let userMissions = await db.select().from(lifeMissions).where(eq(lifeMissions.userId, userResult.id)).orderBy(desc(lifeMissions.createdAt));
+      let userGoals = await db.select().from(goals).where(eq(goals.userId, userResult.id)).orderBy(desc(goals.priorityScore));
+      let userTasks = await db.select().from(orchestrationTasks).where(eq(orchestrationTasks.userId, userResult.id)).orderBy(orchestrationTasks.dueDate);
+
+      // First-time users get one real mission + goals seeded from their own profile and Digital Twin
+      // gaps (not fabricated demo content) so the page isn't permanently empty.
+      if (userMissions.length === 0) {
+        const profileResult = await db.select().from(profiles).where(eq(profiles.userId, userResult.id));
+        const userProfile: any = profileResult[0] || {};
+        const twin = await getDigitalTwin(userResult.id);
+
+        const [seededMission] = await db.insert(lifeMissions).values({
+          userId: userResult.id,
+          title: userProfile.primaryGoal ? `Achieve: ${userProfile.primaryGoal}` : "Holistic Human Development",
+          vision: `Long-term mission generated from your onboarding goal and current Digital Twin baseline (Overall Health Index: ${twin.overallHealthIndex?.score ?? 65}/100).`,
+          alignmentScore: twin.overallHealthIndex?.confidenceAdjustedScore ?? 70
+        }).returning();
+        userMissions = [seededMission];
+
+        const domainKeys: (keyof typeof twin)[] = ["physical", "nutrition", "exercise", "sleep", "mental", "learning"] as any;
+        const gapRanked = domainKeys
+          .map(k => ({ key: k as string, state: (twin as any)[k] }))
+          .filter(d => d.state)
+          .sort((a, b) => (b.state.gap || 0) - (a.state.gap || 0))
+          .slice(0, 2);
+
+        for (const d of gapRanked) {
+          const [seededGoal] = await db.insert(goals).values({
+            userId: userResult.id,
+            missionId: seededMission.id,
+            title: `Close the ${d.key} gap (${d.state.score} → ${d.state.targetScore})`,
+            domain: d.key,
+            status: "active",
+            progress: d.state.progressPercentage || 0,
+            priorityScore: d.state.priority === "High" ? 85 : d.state.priority === "Medium" ? 60 : 35,
+            targetDate: new Date(Date.now() + 60 * 24 * 3600 * 1000)
+          }).returning();
+          userGoals.push(seededGoal);
+        }
+      }
+
+      const missions = userMissions.map(m => ({ id: m.id, title: m.title, vision: m.vision, alignmentScore: m.alignmentScore }));
+      const formattedGoals = userGoals.map(g => ({
+        id: g.id,
+        title: g.title,
+        domain: g.domain,
+        status: g.status,
+        progress: g.progress,
+        priority: g.priorityScore,
+        target: g.targetDate ? new Date(g.targetDate).toISOString().substring(0, 10) : null
+      }));
+      const plans = userTasks
+        .filter(t => t.status !== "done")
+        .map(t => {
+          const due = t.dueDate ? new Date(t.dueDate) : null;
+          const time = due ? due.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Unscheduled";
+          return { id: t.id, title: t.title, time, status: t.status, ai: t.aiGenerated, reason: t.description || "" };
+        });
+
+      res.json({ missions, goals: formattedGoals, plans });
+    } catch (error: any) {
+      console.error(error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/orchestration/missions", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+      const { title, vision } = req.body;
+      if (!title) return res.status(400).json({ error: "title is required" });
+
+      const [mission] = await db.insert(lifeMissions).values({
+        userId: userResult.id,
+        title,
+        vision: vision || "",
+        alignmentScore: 100
+      }).returning();
+
+      res.json({ mission });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/orchestration/tasks/:id/complete", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+      const taskId = Number(req.params.id);
+      if (!Number.isInteger(taskId)) return res.status(400).json({ error: "Invalid task id" });
+
+      const [task] = await db.update(orchestrationTasks)
+        .set({ status: "done", updatedAt: new Date() })
+        .where(and(eq(orchestrationTasks.id, taskId), eq(orchestrationTasks.userId, userResult.id)))
+        .returning();
+
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      res.json({ task });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -1223,30 +1524,78 @@ Return a JSON object with this structure:
   app.get("/api/ecosystem", requireAuth, async (req: AuthRequest, res) => {
     try {
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-      
-      // Mock data for Phase 6 ecosystem dashboard
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+
+      const collaboratorRows = await db.select({
+        id: collaborationShares.id,
+        name: users.fullName,
+        email: users.email,
+        permissions: collaborationShares.permissions,
+        status: collaborationShares.status,
+      })
+      .from(collaborationShares)
+      .innerJoin(users, eq(collaborationShares.collaboratorId, users.id))
+      .where(and(eq(collaborationShares.ownerId, userResult.id), eq(collaborationShares.status, "active")));
+
+      const collaborators = collaboratorRows.map(c => ({
+        id: c.id,
+        name: c.name || c.email,
+        role: "Collaborator",
+        org: c.email,
+        permissions: Object.keys((c.permissions as any) || {}).filter(k => (c.permissions as any)[k]),
+        status: c.status
+      }));
+
+      const knowledgeRows = await db.select().from(ragDocuments).where(eq(ragDocuments.userId, userResult.id)).orderBy(desc(ragDocuments.createdAt));
+      const knowledgeBase = knowledgeRows.map(d => ({
+        id: d.id,
+        title: d.title,
+        type: d.documentType || "personal_note",
+        status: "indexed",
+        relevance: 100
+      }));
+
+      const biomarkerRows = await db.select().from(biomarkers).where(eq(biomarkers.userId, userResult.id)).orderBy(desc(biomarkers.timestamp));
+      const latestByMarker = new Map<string, typeof biomarkerRows>();
+      for (const b of biomarkerRows) {
+        const list = latestByMarker.get(b.markerName) || [];
+        list.push(b);
+        latestByMarker.set(b.markerName, list);
+      }
+      const markerBiomarkers = Array.from(latestByMarker.values()).map(list => {
+        const [latest, previous] = list;
+        let trend: "improving" | "declining" | "stable" = "stable";
+        if (previous) {
+          const a = parseFloat(latest.value);
+          const b = parseFloat(previous.value);
+          if (!Number.isNaN(a) && !Number.isNaN(b) && b !== 0) {
+            trend = a > b ? "improving" : a < b ? "declining" : "stable";
+          }
+        }
+        return {
+          id: latest.id,
+          name: latest.markerName,
+          value: latest.value,
+          unit: latest.unit,
+          trend,
+          lastChecked: latest.timestamp ? new Date(latest.timestamp).toLocaleDateString() : ""
+        };
+      });
+
+      const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
+      const geminiLatency = getAiAverageLatencyMs();
+
       res.json({
-        collaborators: [
-          { id: 1, name: "Dr. Sarah Chen", role: "Primary Physician", permissions: ["read_metrics", "read_biomarkers"], status: "active", org: "Stanford Medicine" },
-          { id: 2, name: "Marcus Johnson", role: "Performance Coach", permissions: ["read_goals", "write_goals", "read_metrics"], status: "active", org: "Peak Athletics" }
-        ],
-        knowledgeBase: [
-          { id: 1, title: "Huberman Lab - Sleep Protocol", type: "podcast_transcript", status: "indexed", relevance: 98 },
-          { id: 2, title: "Outlive by Peter Attia", type: "book_notes", status: "indexed", relevance: 95 },
-          { id: 3, title: "Q2 Comprehensive Bloodwork", type: "lab_report", status: "analyzed", relevance: 100 }
-        ],
-        healthcare: {
-          biomarkers: [
-            { id: 1, name: "ApoB", value: "65", unit: "mg/dL", trend: "improving", lastChecked: "2 weeks ago" },
-            { id: 2, name: "HbA1c", value: "4.9", unit: "%", trend: "stable", lastChecked: "2 weeks ago" },
-            { id: 3, name: "Morning Cortisol", value: "12", unit: "mcg/dL", trend: "stable", lastChecked: "2 months ago" }
-          ]
-        },
+        collaborators,
+        knowledgeBase,
+        healthcare: { biomarkers: markerBiomarkers },
         models: [
-          { id: "gemini-3.1-pro-preview", status: "active", latency: "120ms", tasks: ["Deep Analysis", "Strategy"] },
-          { id: "gemini-2.5-flash", status: "active", latency: "45ms", tasks: ["Daily Planning", "Ambient Response"] },
-          { id: "claude-3-opus", status: "standby", latency: "-", tasks: ["Medical Second Opinion"] },
-          { id: "local-llama-3", status: "offline", latency: "-", tasks: ["Offline Fallback"] }
+          {
+            id: "gemini-2.5-flash",
+            status: geminiConfigured ? "active" : "offline",
+            latency: aiMetrics.callCount > 0 ? `${geminiLatency}ms` : "-",
+            tasks: ["Coach Nova Chat", "Digital Twin Recalibration", "Specialist Agent Council", "Daily/Weekly/Monthly Briefings"]
+          }
         ]
       });
     } catch (error: any) {
@@ -1255,31 +1604,167 @@ Return a JSON object with this structure:
     }
   });
 
+  app.post("/api/ecosystem/collaborators", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+      const { email, permissions } = req.body;
+      if (!email) return res.status(400).json({ error: "email is required" });
+
+      const [collaboratorUser] = await db.select().from(users).where(eq(users.email, email));
+      if (!collaboratorUser) {
+        return res.status(404).json({ error: "No InnerVerse account found for that email. Ask them to sign up first." });
+      }
+      if (collaboratorUser.id === userResult.id) {
+        return res.status(400).json({ error: "You cannot invite yourself." });
+      }
+
+      const [share] = await db.insert(collaborationShares).values({
+        ownerId: userResult.id,
+        collaboratorId: collaboratorUser.id,
+        permissions: permissions || { read_metrics: true },
+        status: "active"
+      }).returning();
+
+      res.json({ share });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/ecosystem/collaborators/:id/revoke", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+      const shareId = Number(req.params.id);
+      if (!Number.isInteger(shareId)) return res.status(400).json({ error: "Invalid id" });
+
+      const [share] = await db.update(collaborationShares)
+        .set({ status: "revoked" })
+        .where(and(eq(collaborationShares.id, shareId), eq(collaborationShares.ownerId, userResult.id)))
+        .returning();
+
+      if (!share) return res.status(404).json({ error: "Collaborator share not found" });
+      res.json({ share });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/ecosystem/biomarkers", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+      const { markerName, value, unit } = req.body;
+      if (!markerName || value === undefined || !unit) {
+        return res.status(400).json({ error: "markerName, value, and unit are required" });
+      }
+
+      const [marker] = await db.insert(biomarkers).values({
+        userId: userResult.id,
+        markerName,
+        value: String(value),
+        unit,
+        source: "manual"
+      }).returning();
+
+      res.json({ marker });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/ecosystem/knowledge", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+      const { title, documentType, content } = req.body;
+      if (!title) return res.status(400).json({ error: "title is required" });
+
+      const [doc] = await db.insert(ragDocuments).values({
+        userId: userResult.id,
+        title,
+        documentType: documentType || "personal_note",
+        content: content || ""
+      }).returning();
+
+      res.json({ document: doc });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/cognition", requireAuth, async (req: AuthRequest, res) => {
     try {
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-      
-      // Mock data for Phase 7 cognitive dashboard
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+
+      // Memory System: real cognitiveMemory rows written as the user journals, recalibrates
+      // their twin, and completes quests (see /api/journal, digitalTwinService, /api/quests/complete).
+      const memoryRows = await db.select().from(cognitiveMemory).where(eq(cognitiveMemory.userId, userResult.id));
+      const memoryByType = new Map<string, { count: number; latest: Date | null; status: string }>();
+      for (const m of memoryRows) {
+        const entry = memoryByType.get(m.memoryType) || { count: 0, latest: null, status: m.consolidationStatus || "raw" };
+        entry.count += 1;
+        const updated = m.updatedAt ? new Date(m.updatedAt) : null;
+        if (updated && (!entry.latest || updated > entry.latest)) {
+          entry.latest = updated;
+          entry.status = m.consolidationStatus || "raw";
+        }
+        memoryByType.set(m.memoryType, entry);
+      }
+      const memorySystem = Array.from(memoryByType.entries()).map(([type, v]) => ({
+        type: type.charAt(0).toUpperCase() + type.slice(1),
+        count: v.count,
+        status: v.status.charAt(0).toUpperCase() + v.status.slice(1),
+        lastUpdated: timeAgo(v.latest)
+      }));
+
+      // Meta-Reasoning: derived from the real Digital Twin snapshot audit trail, not invented counters.
+      const twin = await getDigitalTwin(userResult.id);
+      const snapshots = await getDigitalTwinHistory(userResult.id);
+      const correctedAssumptions = snapshots.filter(s => s.triggerSource.startsWith("manual_update_") || s.triggerSource.includes("recalibrate")).length;
+      const latestSnapshot = snapshots[0];
+
+      const researchExperimentRows = await db.select().from(researchExperiments).where(eq(researchExperiments.userId, userResult.id)).orderBy(desc(researchExperiments.createdAt));
+      const researchExperimentsOut = researchExperimentRows.map(e => {
+        const daysElapsed = e.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(e.createdAt).getTime()) / (24 * 3600 * 1000))) : 0;
+        return {
+          id: e.id,
+          hypothesis: e.hypothesis,
+          status: e.status,
+          significance: e.statisticalSignificance,
+          duration: e.concludedAt ? undefined : `${daysElapsed} day${daysElapsed === 1 ? "" : "s"} elapsed`,
+          result: (e.results as any)?.result
+        };
+      });
+
+      const validKeys = ["physical", "nutrition", "exercise", "recovery", "sleep", "stress", "mental", "emotional", "yoga", "meditation", "habit", "learning", "career", "financial", "social", "purpose"] as const;
+      let lowestKey: string = "sleep";
+      let lowestState: any = null;
+      for (const key of validKeys) {
+        const state = (twin as any)[key];
+        if (state && (!lowestState || state.score < lowestState.score)) {
+          lowestState = state;
+          lowestKey = key;
+        }
+      }
+      const overallScore = twin.overallHealthIndex?.score ?? 65;
+      const baselineLabel = overallScore >= 80 ? "Peak Performance State" : overallScore >= 60 ? "Stable Development State" : "Foundational Calibration State";
+
       res.json({
-        memorySystem: [
-          { type: "Semantic", count: 1450, status: "Consolidated", lastUpdated: "1 hour ago" },
-          { type: "Episodic", count: 320, status: "Indexing", lastUpdated: "Just now" },
-          { type: "Procedural", count: 45, status: "Active", lastUpdated: "5 mins ago" }
-        ],
+        memorySystem,
         metaReasoning: {
-          confidenceScore: 88,
-          correctedAssumptions: 12,
-          recentSelfCorrection: "Adjusted sleep impact correlation based on 2-week HRV deviation.",
-          decisionAudits: 45
+          confidenceScore: twin.overallHealthIndex?.confidenceAdjustedScore ?? 0,
+          correctedAssumptions,
+          recentSelfCorrection: latestSnapshot?.generatedSummary || "No recalibrations recorded yet.",
+          decisionAudits: snapshots.length
         },
-        researchExperiments: [
-          { id: 1, hypothesis: "Zone 2 cardio > 45 mins improves deep sleep latency by 15%", status: "running", significance: null, duration: "14 days" },
-          { id: 2, hypothesis: "Late evening protein intake reduces morning fasting glucose", status: "concluded", significance: 92, result: "Confirmed" }
-        ],
+        researchExperiments: researchExperimentsOut,
         twinProjections: {
-          currentBaseline: "Peak Cognitive State",
-          forecast30Days: "Burnout risk elevated (15%) due to sustained high cognitive load.",
-          suggestedIntervention: "Introduce deliberate defocus intervals (15 mins) every 90 mins."
+          currentBaseline: `${baselineLabel} (Overall Health Index: ${overallScore}/100)`,
+          forecast30Days: lowestState ? `${lowestKey.charAt(0).toUpperCase() + lowestKey.slice(1)} projected to move from ${lowestState.score} to ${lowestState.predictedScore30d ?? lowestState.score} over 30 days (${lowestState.riskLevel || "Medium"} risk).` : "Insufficient data to project.",
+          suggestedIntervention: lowestState ? `${lowestState.expectedImprovement || "Steady progress"} expected over ${lowestState.estimatedTime || "several weeks"} if current habits continue.` : "Log activity to generate a projection."
         }
       });
     } catch (error: any) {
@@ -1288,57 +1773,96 @@ Return a JSON object with this structure:
     }
   });
 
+  app.post("/api/cognition/experiments", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+      const { hypothesis, experimentType } = req.body;
+      if (!hypothesis) return res.status(400).json({ error: "hypothesis is required" });
+
+      const [experiment] = await db.insert(researchExperiments).values({
+        userId: userResult.id,
+        hypothesis,
+        experimentType: experimentType || "longitudinal",
+        status: "running"
+      }).returning();
+
+      res.json({ experiment });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/research/dashboard", requireAuth, async (req: AuthRequest, res) => {
     try {
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-      
-      // Mock data for Phase 7b research dashboard
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+
+      // Recommendations: reshape the real, AI-generated recommendations already produced by the
+      // Specialist Agent Council (see /api/recommendations/generate) into the Explainable AI view.
+      const recRows = await db.select().from(recommendations).where(and(eq(recommendations.userId, userResult.id), eq(recommendations.status, "active")));
+      const recommendationsOut = recRows.map(r => {
+        const content: any = r.content || {};
+        const evidence: any = {};
+        if (r.agentType === "NUTRITION") evidence.nutritional = r.reason;
+        else if (r.agentType === "MENTAL" || r.agentType === "MEDITATION") evidence.psychological = r.reason;
+        else evidence.biological = r.reason;
+        evidence.supportingMetrics = Array.isArray(content.affectedDomains) && content.affectedDomains.length > 0
+          ? content.affectedDomains.map((d: string) => `Affects ${d} domain`)
+          : [r.expectedBenefit];
+        evidence.conflictingMetrics = (r.riskFactors && !/none identified/i.test(r.riskFactors)) ? [r.riskFactors] : [];
+
+        return {
+          id: r.id,
+          title: r.title,
+          dimension: r.agentType,
+          priority: r.confidenceScore >= 90 ? "High" : r.confidenceScore >= 75 ? "Medium" : "Low",
+          confidence: r.confidenceScore,
+          uncertainty: Math.max(0, 100 - r.confidenceScore),
+          evidence
+        };
+      });
+
+      // Predictions: pull the Digital Twin's own already-computed 7-day forecasts for the
+      // domains with the largest gap, instead of inventing forecasts.
+      const twin = await getDigitalTwin(userResult.id);
+      const validKeys = ["physical", "nutrition", "exercise", "recovery", "sleep", "stress", "mental", "emotional", "yoga", "meditation", "habit", "learning", "career", "financial", "social", "purpose"] as const;
+      const predictions = validKeys
+        .map(key => ({ key, state: (twin as any)[key] }))
+        .filter(d => d.state)
+        .sort((a, b) => (b.state.gap || 0) - (a.state.gap || 0))
+        .slice(0, 3)
+        .map(d => ({
+          dimension: d.key.charAt(0).toUpperCase() + d.key.slice(1),
+          predictedValue: `${d.state.predictedScore7d ?? d.state.score}/100`,
+          timeframe: "Next 7 Days",
+          confidence: d.state.predictionConfidence ?? d.state.confidence ?? 50,
+          uncertainty: Math.max(0, 100 - (d.state.predictionConfidence ?? d.state.confidence ?? 50))
+        }));
+
+      const behaviorPatternRows = await db.select().from(behaviorPatterns).where(eq(behaviorPatterns.userId, userResult.id)).orderBy(desc(behaviorPatterns.detectedAt));
+      const behaviorPatternsOut = behaviorPatternRows.map(p => ({
+        name: p.patternName,
+        type: p.patternType,
+        frequency: p.frequency,
+        trigger: p.trigger,
+        impact: p.impact
+      }));
+
+      const interventionRows = await db.select().from(interventionEffectiveness).where(eq(interventionEffectiveness.userId, userResult.id)).orderBy(desc(interventionEffectiveness.createdAt));
+      const interventionsOut = interventionRows.map(i => ({
+        title: i.analysis || `Recommendation #${i.recommendationId}`,
+        baseline: i.baselineScore,
+        post: i.postScore,
+        adherence: i.adherenceRate,
+        status: i.successStatus
+      }));
+
       res.json({
-        recommendations: [
-          {
-            id: 1,
-            title: "Increase Zone 2 Cardio Duration",
-            dimension: "Exercise",
-            priority: "High",
-            confidence: 94,
-            uncertainty: 4,
-            evidence: {
-              biological: "Mitochondrial density adaptations align with your recent heart rate variability trends.",
-              psychological: "Endurance activities correlated strongly with reported mood stability in the past 6 weeks.",
-              supportingMetrics: ["HRV up 12%", "Resting HR down 4bpm"],
-              conflictingMetrics: ["Sleep latency slightly elevated on cardio days"]
-            },
-            scientificSource: { title: "Cardiovascular Adaptations to Endurance Training", year: 2023 }
-          },
-          {
-            id: 2,
-            title: "Shift Protein Intake to Earlier in Day",
-            dimension: "Nutrition",
-            priority: "Medium",
-            confidence: 82,
-            uncertainty: 15,
-            evidence: {
-              biological: "Aligns with circadian metabolism patterns; may reduce evening thermal load.",
-              nutritional: "Your current pattern shows 60% of protein intake after 7PM.",
-              supportingMetrics: ["Morning fasting glucose optimization"],
-              conflictingMetrics: ["Requires behavior pattern shift"]
-            },
-            scientificSource: { title: "Circadian Rhythm and Protein Synthesis", year: 2024 }
-          }
-        ],
-        predictions: [
-          { dimension: "Burnout Probability", predictedValue: "15%", timeframe: "Next 14 Days", confidence: 88, uncertainty: 12 },
-          { dimension: "Sleep Quality Score", predictedValue: "88/100", timeframe: "Next 7 Days", confidence: 75, uncertainty: 20 },
-          { dimension: "Deep Work Capacity", predictedValue: "2.5 hrs/day", timeframe: "Next 7 Days", confidence: 91, uncertainty: 5 }
-        ],
-        behaviorPatterns: [
-          { name: "Late Night Media Consumption", type: "negative", frequency: "3x/week", trigger: "High stress work days", impact: "-25% Sleep Quality" },
-          { name: "Morning Sunlight Exposure", type: "positive", frequency: "5x/week", trigger: "Wake up before 7am", impact: "+15% Energy Levels" }
-        ],
-        interventions: [
-          { title: "Magnesium Threonate (200mg)", baseline: 72, post: 85, adherence: 90, status: "success" },
-          { title: "Digital Sunset (9PM)", baseline: 65, post: 68, adherence: 40, status: "failed" }
-        ]
+        recommendations: recommendationsOut,
+        predictions,
+        behaviorPatterns: behaviorPatternsOut,
+        interventions: interventionsOut
       });
     } catch (error: any) {
       console.error(error);
@@ -1349,36 +1873,88 @@ Return a JSON object with this structure:
   app.get("/api/lifeos/status", requireAuth, async (req: AuthRequest, res) => {
     try {
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-      
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+
+      const twin = await getDigitalTwin(userResult.id);
+      const [twinRow] = await db.select().from(digitalTwins).where(eq(digitalTwins.userId, userResult.id));
+      const twinAgeMs = twinRow?.updatedAt ? Date.now() - new Date(twinRow.updatedAt).getTime() : Infinity;
+      const supervisorStatus = twinAgeMs < 24 * 3600 * 1000 ? "Active" : "Idle";
+
+      const activeRecs = await db.select().from(recommendations).where(and(eq(recommendations.userId, userResult.id), eq(recommendations.status, "active")));
+      const activeAgents = new Set(activeRecs.map(r => r.agentType)).size;
+
+      const userTasks = await db.select().from(orchestrationTasks).where(eq(orchestrationTasks.userId, userResult.id));
+      const todoTasks = userTasks.filter(t => t.status === "todo");
+
+      let dbReachable = true;
+      try { await db.execute(sql`SELECT 1`); } catch { dbReachable = false; }
+
+      const agentDomainMap: { name: string; key: string }[] = [
+        { name: "Physical Health", key: "physical" },
+        { name: "Mental Wellness", key: "mental" },
+        { name: "Nutrition Intelligence", key: "nutrition" },
+        { name: "Habit Formation", key: "habit" },
+        { name: "Learning", key: "learning" }
+      ];
+      const agents = agentDomainMap.map(({ name, key }) => {
+        const state = (twin as any)[key];
+        const status = !state ? "idle" : state.trend === "up" ? "optimizing" : state.trend === "down" ? "analyzing" : "idle";
+        const load = !state ? "low" : (state.gap || 0) >= 25 ? "high" : (state.gap || 0) >= 10 ? "medium" : "low";
+        return { name, status, load };
+      });
+
+      const recentDecisions = activeRecs
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+        .slice(0, 3)
+        .map(r => ({
+          id: r.id,
+          topic: r.agentType,
+          recommendation: r.title,
+          confidence: r.confidenceScore,
+          time: timeAgo(r.createdAt),
+          agentsInvolved: [r.agentType]
+        }));
+
+      const todayStr = new Date().toISOString().substring(0, 10);
+      const todaysTasks = userTasks.filter(t => t.dueDate && new Date(t.dueDate).toISOString().substring(0, 10) === todayStr);
+      const doneToday = todaysTasks.filter(t => t.status === "done").length;
+      const progress = todaysTasks.length > 0 ? Math.round((doneToday / todaysTasks.length) * 100) : 0;
+      const nextTask = todaysTasks.find(t => t.status !== "done");
+      const upcoming = todaysTasks
+        .filter(t => t.status !== "done")
+        .sort((a, b) => new Date(a.dueDate || 0).getTime() - new Date(b.dueDate || 0).getTime())
+        .map(t => ({
+          time: t.dueDate ? new Date(t.dueDate).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+          title: t.title,
+          type: "task"
+        }));
+
+      const validKeys = ["physical", "nutrition", "exercise", "recovery", "sleep", "stress", "mental", "emotional", "yoga", "meditation", "habit", "learning", "career", "financial", "social", "purpose"] as const;
+      const activeOptimizations = validKeys
+        .map(key => ({ key, state: (twin as any)[key] }))
+        .filter(d => d.state)
+        .sort((a, b) => (b.state.gap || 0) - (a.state.gap || 0))
+        .slice(0, 2)
+        .map(d => ({
+          dimension: d.key.charAt(0).toUpperCase() + d.key.slice(1),
+          currentScore: d.state.score,
+          targetScore: d.state.targetScore,
+          strategy: `${d.state.expectedImprovement || "Steady progress"} over ${d.state.estimatedTime || "several weeks"}`
+        }));
+
       res.json({
-        supervisorStatus: "Active",
-        activeAgents: 5,
-        pendingTasks: 3,
-        systemHealth: "Optimal",
-        agents: [
-          { name: "Physical Health", status: "idle", load: "low" },
-          { name: "Mental Wellness", status: "analyzing", load: "medium" },
-          { name: "Nutrition Intelligence", status: "idle", load: "low" },
-          { name: "Habit Formation", status: "optimizing", load: "high" },
-          { name: "Learning", status: "idle", load: "low" }
-        ],
-        recentDecisions: [
-          { id: 1, topic: "Schedule Adjustment", recommendation: "Delay workout to evening due to morning stress markers.", confidence: 92, time: "10 mins ago", agentsInvolved: ["Mental Wellness", "Physical Health"] },
-          { id: 2, topic: "Dietary Intervention", recommendation: "Increase hydration to mitigate predicted afternoon fatigue.", confidence: 85, time: "1 hour ago", agentsInvolved: ["Nutrition Intelligence"] }
-        ],
+        supervisorStatus,
+        activeAgents,
+        pendingTasks: todoTasks.length,
+        systemHealth: dbReachable ? "Optimal" : "Degraded",
+        agents,
+        recentDecisions,
         dailyPlan: {
-          progress: 45,
-          nextTask: "Deep Work Block",
-          upcoming: [
-            { time: "14:00", title: "Deep Work Block", type: "focus" },
-            { time: "17:30", title: "Zone 2 Cardio", type: "physical" },
-            { time: "20:00", title: "Digital Sunset", type: "mental" }
-          ]
+          progress,
+          nextTask: nextTask?.title || "No tasks scheduled today",
+          upcoming
         },
-        activeOptimizations: [
-          { dimension: "Sleep", currentScore: 78, targetScore: 85, strategy: "Gradual bedtime shift (-15m/day)" },
-          { dimension: "Focus", currentScore: 65, targetScore: 80, strategy: "Implementing Pomodoro structure" }
-        ]
+        activeOptimizations
       });
     } catch (error: any) {
       console.error(error);
@@ -1505,13 +2081,18 @@ If there are no foods or exercises, return empty arrays.`;
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
       const { plan, billingCycle } = req.body;
       const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-      
-      const [updated] = await db.insert(subscriptions).values({
+
+      const subValues = {
         userId: userResult.id,
         plan: plan || 'Pro',
         billingCycle: billingCycle || 'monthly',
-        status: 'active'
-      }).onConflictDoNothing().returning();
+        status: 'active',
+        updatedAt: new Date()
+      };
+      const [updated] = await db.insert(subscriptions).values(subValues).onConflictDoUpdate({
+        target: subscriptions.userId,
+        set: subValues
+      }).returning();
 
       // Record payment log
       const amount = plan === 'Enterprise' ? 9900 : plan === 'Pro' ? 2900 : plan === 'Premium' ? 1200 : 0;
@@ -1525,6 +2106,13 @@ If there are no foods or exercises, return empty arrays.`;
         });
       }
 
+      await db.insert(notifications).values({
+        userId: userResult.id,
+        title: "Subscription Updated",
+        message: `Your plan is now ${updated?.plan || plan || 'Pro'} (${updated?.billingCycle || billingCycle || 'monthly'} billing).`,
+        type: "info"
+      });
+
       res.json({ success: true, plan, billingCycle });
     } catch (error: any) {
       console.error(error);
@@ -1537,12 +2125,7 @@ If there are no foods or exercises, return empty arrays.`;
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
       const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
       const userPayments = await db.select().from(payments).where(eq(payments.userId, userResult.id)).orderBy(sql`${payments.createdAt} DESC`);
-      res.json({
-        invoices: userPayments.length > 0 ? userPayments : [
-          { id: 1, amount: 2900, currency: 'USD', status: 'succeeded', createdAt: new Date().toISOString(), invoiceUrl: '#' },
-          { id: 2, amount: 2900, currency: 'USD', status: 'succeeded', createdAt: new Date(Date.now() - 30*24*3600*1000).toISOString(), invoiceUrl: '#' }
-        ]
-      });
+      res.json({ invoices: userPayments });
     } catch (error: any) {
       console.error(error);
       res.status(500).json({ error: error.message });
@@ -1554,12 +2137,7 @@ If there are no foods or exercises, return empty arrays.`;
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
       const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
       const userNotifs = await db.select().from(notifications).where(eq(notifications.userId, userResult.id)).orderBy(sql`${notifications.createdAt} DESC`);
-      res.json({
-        notifications: userNotifs.length > 0 ? userNotifs : [
-          { id: 1, title: "Autonomous Optimization Complete", message: "Your sleep & recovery routine was adjusted by Supervisor Agent.", type: "recommendation", isRead: false, createdAt: new Date().toISOString() },
-          { id: 2, title: "Security Alert: New Device Logged In", message: "Chrome on macOS was registered.", type: "info", isRead: true, createdAt: new Date(Date.now() - 86400000).toISOString() }
-        ]
-      });
+      res.json({ notifications: userNotifs });
     } catch (error: any) {
       console.error(error);
       res.status(500).json({ error: error.message });
@@ -1575,7 +2153,7 @@ If there are no foods or exercises, return empty arrays.`;
       if (markAllRead) {
         await db.update(notifications).set({ isRead: true }).where(eq(notifications.userId, userResult.id));
       } else if (notificationId) {
-        await db.update(notifications).set({ isRead: true }).where(eq(notifications.id, notificationId));
+        await db.update(notifications).set({ isRead: true }).where(and(eq(notifications.id, notificationId), eq(notifications.userId, userResult.id)));
       }
       res.json({ success: true });
     } catch (error: any) {
@@ -1586,22 +2164,52 @@ If there are no foods or exercises, return empty arrays.`;
 
   app.get("/api/admin/health", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // Real DB health check: time an actual round trip instead of reporting a fixed number.
+      const dbStart = Date.now();
+      let dbStatus = "operational";
+      let dbLatencyMs = 0;
+      try {
+        await db.execute(sql`SELECT 1`);
+        dbLatencyMs = Date.now() - dbStart;
+      } catch (e) {
+        dbStatus = "outage";
+        dbLatencyMs = Date.now() - dbStart;
+      }
+
+      const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
+      const geminiLatencyMs = getAiAverageLatencyMs();
+
+      const [{ count: totalUsersRaw } = { count: 0 }] = await db.select({ count: sql<number>`count(*)` }).from(users);
+      const totalUsers = Number(totalUsersRaw || 0);
+
+      const now = Date.now();
+      const windowMs = 60 * 1000;
+      const requestsLastMin = requestMetrics.timestamps.filter(t => now - t < windowMs).length;
+      const recentDurations = requestMetrics.durationsMs.slice(-200);
+      const avgResponseTimeMs = recentDurations.length > 0
+        ? Math.round(recentDurations.reduce((a, b) => a + b, 0) / recentDurations.length)
+        : 0;
+      const errorRate = requestMetrics.totalCount > 0
+        ? ((requestMetrics.errorCount / requestMetrics.totalCount) * 100).toFixed(2) + "%"
+        : "0.00%";
+
+      // Persist a snapshot so /api/system/status and future admin views can read the latest recorded check.
+      await db.insert(systemHealth).values({ serviceName: "postgresql_primary", status: dbStatus, latencyMs: dbLatencyMs });
+      await db.insert(systemHealth).values({ serviceName: "gemini_gateway", status: geminiConfigured ? "operational" : "not_configured", latencyMs: geminiLatencyMs });
+
       res.json({
-        uptime: "99.98%",
-        status: "Healthy",
-        activeInstances: 12,
+        status: dbStatus === "operational" ? "Healthy" : "Degraded",
+        uptimeSeconds: Math.round(process.uptime()),
+        activeInstances: 1,
         services: [
-          { name: "PostgreSQL Primary", status: "operational", latencyMs: 8, cpuUsage: 24, memoryUsage: 45 },
-          { name: "Redis Cache Cluster", status: "operational", latencyMs: 2, cpuUsage: 12, memoryUsage: 30 },
-          { name: "Gemini 3.6 Flash Gateway", status: "operational", latencyMs: 120, cpuUsage: 15, memoryUsage: 28 },
-          { name: "Digital Twin Sync Worker", status: "operational", latencyMs: 15, cpuUsage: 35, memoryUsage: 50 },
-          { name: "Supervisor Multi-Agent Engine", status: "operational", latencyMs: 45, cpuUsage: 22, memoryUsage: 40 }
+          { name: "PostgreSQL Primary", status: dbStatus, latencyMs: dbLatencyMs },
+          { name: "Gemini AI Gateway", status: geminiConfigured ? "operational" : "not_configured", latencyMs: geminiLatencyMs }
         ],
         metrics: {
-          totalUsers: 14250,
-          apiRequestsPerMin: 1840,
-          avgResponseTimeMs: 42,
-          errorRate: "0.01%"
+          totalUsers,
+          apiRequestsPerMin: requestsLastMin,
+          avgResponseTimeMs,
+          errorRate
         }
       });
     } catch (error: any) {
@@ -1611,12 +2219,16 @@ If there are no foods or exercises, return empty arrays.`;
   });
 
   app.get("/api/system/status", async (req, res) => {
+    let dbReachable = true;
+    try {
+      await db.execute(sql`SELECT 1`);
+    } catch {
+      dbReachable = false;
+    }
     res.json({
-      status: "operational",
-      version: "v9.4.0-enterprise",
+      status: dbReachable ? "operational" : "degraded",
       timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || "development",
-      region: "us-central1"
+      environment: process.env.NODE_ENV || "development"
     });
   });
 
@@ -1669,19 +2281,107 @@ If there are no foods or exercises, return empty arrays.`;
     }
   });
 
+  // Wearable connections: persisted, real toggle state (no fabricated OAuth ceremony or
+  // permanently-"connected" badges). Apple Health has no browser API, so it is honestly
+  // reported as unavailable rather than shown as connected.
+  app.get("/api/wearables", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+      const connections = await db.select().from(wearableConnections).where(eq(wearableConnections.userId, userResult.id));
+      res.json({ connections });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/wearables/:provider/toggle", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+      const provider = req.params.provider;
+      if (provider === "apple_health") {
+        return res.status(400).json({ error: "Apple Health requires a native iOS app with HealthKit access; it cannot be connected from a browser." });
+      }
+
+      const [existing] = await db.select().from(wearableConnections).where(and(eq(wearableConnections.userId, userResult.id), eq(wearableConnections.provider, provider)));
+
+      let connection;
+      if (existing && existing.connected) {
+        [connection] = await db.update(wearableConnections)
+          .set({ connected: false })
+          .where(eq(wearableConnections.id, existing.id))
+          .returning();
+      } else if (existing) {
+        [connection] = await db.update(wearableConnections)
+          .set({ connected: true, lastSync: new Date() })
+          .where(eq(wearableConnections.id, existing.id))
+          .returning();
+      } else {
+        [connection] = await db.insert(wearableConnections).values({
+          userId: userResult.id,
+          provider,
+          connected: true,
+          lastSync: new Date()
+        }).returning();
+      }
+
+      res.json({ connection });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/devices", requireAuth, async (req: AuthRequest, res) => {
     try {
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
       const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-      const userDevices = await db.select().from(devices).where(eq(devices.userId, userResult.id));
-      res.json({
-        devices: userDevices.length > 0 ? userDevices : [
-          { id: 1, deviceName: "Chrome on macOS (Current)", deviceType: "browser", lastIp: "192.168.1.10", trusted: true, lastActiveAt: new Date().toISOString() },
-          { id: 2, deviceName: "InnerVerse Mobile App (iOS)", deviceType: "mobile", lastIp: "172.56.21.90", trusted: true, lastActiveAt: new Date(Date.now() - 3600000).toISOString() }
-        ]
-      });
+      const userDevices = await db.select().from(devices).where(eq(devices.userId, userResult.id)).orderBy(sql`${devices.lastActiveAt} DESC`);
+      res.json({ devices: userDevices });
     } catch (error: any) {
       console.error(error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Developer API keys: a real key is generated and only its SHA-256 hash is stored,
+  // so the plaintext is shown to the user exactly once, at creation time.
+  app.get("/api/developer/keys", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+      const [key] = await db.select().from(apiKeys).where(eq(apiKeys.userId, userResult.id)).orderBy(desc(apiKeys.createdAt)).limit(1);
+      res.json({
+        hasKey: Boolean(key),
+        keyPreview: key ? `iv_live_${"*".repeat(28)}${key.keyPreview}` : null,
+        createdAt: key?.createdAt || null
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/developer/keys/regenerate", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+
+      const rawKey = `iv_live_${crypto.randomBytes(24).toString("hex")}`;
+      const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
+      const keyPreview = rawKey.slice(-4);
+
+      await db.delete(apiKeys).where(eq(apiKeys.userId, userResult.id));
+      await db.insert(apiKeys).values({
+        userId: userResult.id,
+        keyHash,
+        keyPreview,
+        scopes: ["read_twin", "read_metrics"],
+        name: "Default Key"
+      });
+
+      // The plaintext key is returned only in this response; it cannot be recovered later.
+      res.json({ key: rawKey });
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });

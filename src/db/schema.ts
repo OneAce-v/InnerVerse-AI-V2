@@ -1,5 +1,5 @@
 import { relations } from 'drizzle-orm';
-import { pgTable, serial, text, timestamp, integer, boolean, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, integer, boolean, jsonb, unique } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -343,6 +343,7 @@ export const apiKeys = pgTable('api_keys', {
   userId: integer('user_id').references(() => users.id).notNull(),
   orgId: integer('org_id').references(() => organizations.id),
   keyHash: text('key_hash').notNull(),
+  keyPreview: text('key_preview'), // last 4 chars only, safe to display; the hash can't be reversed
   scopes: jsonb('scopes'), // e.g. ["read_twin", "write_goals"]
   name: text('name'),
   createdAt: timestamp('created_at').defaultNow(),
@@ -608,7 +609,7 @@ export const decisionHistory = pgTable('decision_history', {
 
 export const subscriptions = pgTable('subscriptions', {
   id: serial('id').primaryKey(),
-  userId: integer('user_id').references(() => users.id).notNull(),
+  userId: integer('user_id').references(() => users.id).notNull().unique(),
   plan: text('plan').default('Free'), // Free, Premium, Pro, Enterprise
   status: text('status').default('active'), // active, canceled, past_due
   billingCycle: text('billing_cycle').default('monthly'), // monthly, yearly
@@ -628,6 +629,18 @@ export const payments = pgTable('payments', {
   invoiceUrl: text('invoice_url'),
   createdAt: timestamp('created_at').defaultNow(),
 });
+
+export const questCompletions = pgTable('quest_completions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  questId: text('quest_id').notNull(),
+  completedDate: text('completed_date').notNull(), // YYYY-MM-DD, scopes one reward per quest per day
+  xpAwarded: integer('xp_awarded').notNull(),
+  coinsAwarded: integer('coins_awarded').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+  oneRewardPerQuestPerDay: unique().on(table.userId, table.questId, table.completedDate),
+}));
 
 export const notifications = pgTable('notifications', {
   id: serial('id').primaryKey(),
@@ -670,7 +683,9 @@ export const devices = pgTable('devices', {
   trusted: boolean('trusted').default(true),
   lastActiveAt: timestamp('last_active_at').defaultNow(),
   createdAt: timestamp('created_at').defaultNow(),
-});
+}, (table) => ({
+  oneRowPerUserDevice: unique().on(table.userId, table.deviceName),
+}));
 
 export const systemHealth = pgTable('system_health', {
   id: serial('id').primaryKey(),
