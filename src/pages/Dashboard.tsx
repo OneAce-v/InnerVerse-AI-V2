@@ -457,7 +457,7 @@ export default function Dashboard() {
                     }
 
                     // Map agentType/type to style & icon
-                    const typeLower = (rec.type || "").toLowerCase();
+                    const typeLower = (rec.agentType || rec.type || "").toLowerCase();
                     const isFitness = typeLower.includes("fitness") || typeLower.includes("exercise");
                     const isNutrition = typeLower.includes("nutrition");
                     const isSleep = typeLower.includes("sleep") || typeLower.includes("recovery");
@@ -496,7 +496,7 @@ export default function Dashboard() {
                             <div>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${recColor}`}>
-                                  {rec.type || "Specialist Agent"}
+                                  {rec.agentType || rec.type || "Specialist Agent"}
                                 </span>
                                 {details.hdiImprovement && (
                                   <span className="text-[10px] font-mono text-green-500 font-bold">
@@ -509,9 +509,9 @@ export default function Dashboard() {
                               </h4>
                             </div>
                           </div>
-                          {details.confidenceScore && (
+                          {(rec.confidenceScore || details.confidenceScore) && (
                             <Badge variant="outline" className="font-mono text-[9px] text-indigo-400 border-indigo-500/25 shrink-0">
-                              {details.confidenceScore}% Conf
+                              {rec.confidenceScore ?? details.confidenceScore}% Conf
                             </Badge>
                           )}
                         </div>
@@ -519,24 +519,24 @@ export default function Dashboard() {
                         <div className="text-xs text-muted-foreground leading-relaxed pl-11 space-y-2">
                           <div className="font-medium text-foreground bg-muted/45 p-2.5 rounded-lg border border-border/40">
                             <strong className="text-primary text-[10px] font-bold uppercase tracking-wider block mb-0.5">Clinical Rationale:</strong>
-                            {details.reason || rec.content || "Assessment initialized from digital twin parameters."}
+                            {rec.reason || details.reason || "Assessment initialized from digital twin parameters."}
                           </div>
 
                           {/* Collapsible XAI Specs */}
                           <div className="bg-muted/30 p-2.5 rounded-lg border border-border/40 text-[11px] space-y-1.5 font-mono">
-                            {details.evidence && (
+                            {(rec.evidence || details.evidence) && (
                               <p>
-                                <span className="text-indigo-400 font-bold uppercase tracking-wider text-[9px]">Scientific Evidence:</span> {details.evidence}
+                                <span className="text-indigo-400 font-bold uppercase tracking-wider text-[9px]">Scientific Evidence:</span> {rec.evidence || details.evidence}
                               </p>
                             )}
-                            {details.expectedBenefit && (
+                            {(rec.expectedBenefit || details.expectedBenefit) && (
                               <p>
-                                <span className="text-green-500 font-bold uppercase tracking-wider text-[9px]">Expected Benefit:</span> {details.expectedBenefit}
+                                <span className="text-green-500 font-bold uppercase tracking-wider text-[9px]">Expected Benefit:</span> {rec.expectedBenefit || details.expectedBenefit}
                               </p>
                             )}
-                            {details.riskFactors && (
+                            {(rec.riskFactors || details.riskFactors) && (
                               <p>
-                                <span className="text-red-400 font-bold uppercase tracking-wider text-[9px]">Risk Factors:</span> {details.riskFactors}
+                                <span className="text-red-400 font-bold uppercase tracking-wider text-[9px]">Risk Factors:</span> {rec.riskFactors || details.riskFactors}
                               </p>
                             )}
                             {details.alternatives && (
