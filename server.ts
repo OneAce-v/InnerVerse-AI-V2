@@ -1,6 +1,8 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import crypto from "crypto";
+import rateLimit from "express-rate-limit";
 import { createServer as createViteServer } from "vite";
 import { requireAuth, AuthRequest } from "./src/middleware/auth.ts";
 import { getOrCreateUser } from "./src/db/users.ts";
@@ -135,6 +137,38 @@ async function startServer() {
     });
     next();
   });
+
+  // General abuse/scraping guard on the whole API surface.
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests, please try again later." },
+  });
+  app.use("/api", apiLimiter);
+
+  // Tighter limit on routes that call the Gemini API directly - these are
+  // the expensive, cost-per-call endpoints most worth protecting.
+  const aiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "AI request limit reached. Please wait a few minutes and try again." },
+  });
+  app.use(
+    [
+      "/api/agents/chat",
+      "/api/recommendations/generate",
+      "/api/simulation",
+      "/api/track/food/vision",
+      "/api/digital-twin/recalibrate",
+      "/api/orchestration/decision",
+      "/api/cognition/experiments",
+    ],
+    aiLimiter,
+  );
 
   // Wait for Cloud SQL proxy to be ready if needed, or define directly
   // In AI Studio, the proxy is launched automatically.
