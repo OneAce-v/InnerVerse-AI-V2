@@ -90,11 +90,15 @@ Postgres service container on every push and pull request.
 ## Project layout
 
 ```
-server.ts                  Express app: all API routes, Gemini calls, request metrics
+server.ts                  Express bootstrap: middleware, rate limits, router mounts
 src/
+  routes/                  One file per feature area (profile, tracking, digitalTwin,
+                            gamification, store, orchestration, ecosystem, cognition, ...)
+                            - each exports an express.Router() mounted in server.ts
   agents/                  Supervisor/specialist AI agent orchestration
   db/                      Drizzle schema, connection pool, digital twin service
-  lib/                     Firebase client/admin setup, AI call metrics, utils
+  lib/                     Gemini client + retry, reward/store catalogs, request
+                            metrics, Firebase client/admin setup, misc server helpers
   middleware/               Auth middleware (Firebase ID token verification)
   components/
     Layout.tsx              App shell: grouped nav, mobile drawer, page transitions
@@ -108,6 +112,4 @@ src/
 
 Test coverage is intentionally narrow so far — it targets the server-authoritative
 logic most worth protecting (quest reward idempotency, atomic store purchases, the
-notifications IDOR fix, the journal date fallback) rather than every route. `server.ts`
-itself is also still a single ~2,500-line file; splitting it into route modules is a
-separate, not-yet-done piece of work.
+notifications IDOR fix, the journal date fallback) rather than every route.
