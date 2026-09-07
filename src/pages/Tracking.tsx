@@ -6,6 +6,8 @@ import {
 import { motion } from "motion/react";
 import { Activity } from "lucide-react";
 import { useAuth } from "../AuthContext.tsx";
+import { PageHeader } from "../components/ui/page-header.tsx";
+import { staggerContainer, staggerItem } from "@/lib/motion";
 
 // Sub-components
 import HabitTracker from "../components/tracking/HabitTracker.tsx";
@@ -63,20 +65,15 @@ export default function Tracking() {
       animate={{ opacity: 1, y: 0 }}
       className="space-y-8 pb-12 max-w-6xl mx-auto"
     >
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-2">
-            <Activity className="w-8 h-8 text-primary" />
-            Smart Data Tracking
-          </h1>
-          <p className="text-muted-foreground">
-            Log your nutrition and exercise or connect wearables.
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        icon={Activity}
+        title="Smart Data Tracking"
+        description="Log your nutrition and exercise or connect wearables."
+      />
 
       {/* Daily Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <motion.div variants={staggerItem}>
         <Card className="border-border bg-card/60">
           <CardContent className="p-4 flex flex-col justify-center h-full">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
@@ -98,6 +95,8 @@ export default function Tracking() {
             </div>
           </CardContent>
         </Card>
+        </motion.div>
+        <motion.div variants={staggerItem}>
         <Card className="border-border bg-card/60">
           <CardContent className="p-4 flex flex-col justify-center h-full">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
@@ -119,6 +118,8 @@ export default function Tracking() {
             </div>
           </CardContent>
         </Card>
+        </motion.div>
+        <motion.div variants={staggerItem}>
         <Card className="border-border bg-card/60">
           <CardContent className="p-4 flex flex-col justify-center h-full">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
@@ -138,6 +139,8 @@ export default function Tracking() {
             </div>
           </CardContent>
         </Card>
+        </motion.div>
+        <motion.div variants={staggerItem}>
         <Card className="border-border bg-card/60">
           <CardContent className="p-4 flex flex-col justify-center h-full">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
@@ -157,7 +160,8 @@ export default function Tracking() {
             </div>
           </CardContent>
         </Card>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* Daily Habits Calibration Section */}
       <HabitTracker />
