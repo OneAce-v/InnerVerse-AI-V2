@@ -107,7 +107,7 @@ export default function Layout() {
 
   useEffect(() => {
     if (!loading && !user) {
-      navigate('/login');
+      navigate('/welcome');
     }
   }, [user, loading, navigate]);
 
