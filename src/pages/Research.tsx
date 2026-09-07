@@ -4,7 +4,19 @@ import { useAuth } from '../AuthContext.tsx';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Badge } from '../components/ui/badge.tsx';
+import { PageHeader } from '../components/ui/page-header.tsx';
+import { SectionTabs } from '../components/ui/section-tabs.tsx';
+import { EmptyState } from '../components/ui/empty-state.tsx';
+import { PageLoader } from '../components/ui/skeleton.tsx';
+import { tabPanel, staggerContainer, staggerItem } from '@/lib/motion';
 import { Brain, FileText, FlaskConical, Target, Activity, Zap, ShieldAlert, LineChart, BookOpen, AlertTriangle } from 'lucide-react';
+
+const TABS = [
+  { id: 'explainable', label: 'Explainable AI', icon: Brain },
+  { id: 'predictions', label: 'Predictions', icon: Target },
+  { id: 'behavior', label: 'Behavior Patterns', icon: Activity },
+  { id: 'interventions', label: 'Interventions', icon: Zap },
+];
 
 export default function Research() {
   const { getToken, user } = useAuth();
@@ -33,46 +45,29 @@ export default function Research() {
     }
   };
 
-  if (loading) {
-    return <div className="p-8 flex justify-center items-center h-full"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
-  }
+  if (loading) return <PageLoader />;
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-8 pb-24 md:pb-8 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-foreground flex items-center gap-2">
-            <FlaskConical className="w-8 h-8 text-primary" /> Research Intelligence
-          </h1>
-          <p className="text-muted-foreground mt-1 text-sm md:text-base">
-            Explainable AI, predictive modeling, and longitudinal intervention tracking.
-          </p>
-        </div>
-        <Button className="font-bold flex items-center gap-2">
-           <LineChart className="w-4 h-4" /> Publication Export
-        </Button>
-      </div>
+    <div className="max-w-7xl mx-auto pb-24 md:pb-8 space-y-6">
+      <PageHeader
+        icon={FlaskConical}
+        title="Research Intelligence"
+        description="Explainable AI, predictive modeling, and longitudinal intervention tracking."
+        action={<Button className="font-bold flex items-center gap-2"><LineChart className="w-4 h-4" /> Publication Export</Button>}
+      />
 
-      <div className="flex border border-border p-1 bg-muted/40 rounded-xl overflow-x-auto scrollbar-hide gap-1">
-        <button onClick={() => setActiveTab("explainable")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "explainable" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <Brain className="w-4 h-4" /> Explainable AI
-        </button>
-        <button onClick={() => setActiveTab("predictions")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "predictions" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <Target className="w-4 h-4" /> Predictions
-        </button>
-        <button onClick={() => setActiveTab("behavior")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "behavior" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <Activity className="w-4 h-4" /> Behavior Patterns
-        </button>
-        <button onClick={() => setActiveTab("interventions")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "interventions" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <Zap className="w-4 h-4" /> Interventions
-        </button>
-      </div>
+      <SectionTabs tabs={TABS} value={activeTab} onChange={(id) => setActiveTab(id as any)} layoutId="research-tab" />
 
       <AnimatePresence mode="wait">
         {activeTab === "explainable" ? (
-          <motion.div key="explainable" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+          <motion.div key="explainable" variants={tabPanel} initial="hidden" animate="visible" exit="exit" className="space-y-6">
+            {(!data?.recommendations || data.recommendations.length === 0) ? (
+              <EmptyState icon={Brain} title="No recommendations to explain yet" description="Generate recommendations from your Dashboard to see the full scientific reasoning behind them here." />
+            ) : (
+            <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-6">
             {data?.recommendations?.map((rec: any) => (
-              <Card key={rec.id} className="border-border">
+              <motion.div key={rec.id} variants={staggerItem}>
+              <Card className="border-border">
                 <CardHeader className="pb-4 border-b border-border">
                   <div className="flex flex-col md:flex-row justify-between md:items-start gap-4">
                     <div>
@@ -121,7 +116,7 @@ export default function Research() {
                         </div>
                       )}
                    </div>
-                   
+
                    <div className="space-y-4">
                       <h4 className="font-bold flex items-center gap-2 text-sm"><LineChart className="w-4 h-4 text-primary" /> Empirical Evidence</h4>
                       <div className="space-y-2">
@@ -145,18 +140,25 @@ export default function Research() {
                    </div>
                 </CardContent>
               </Card>
+              </motion.div>
             ))}
+            </motion.div>
+            )}
           </motion.div>
         ) : activeTab === "predictions" ? (
-          <motion.div key="predictions" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="predictions" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
             <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Target className="w-5 h-5 text-indigo-400" /> Predictive Modeling</CardTitle>
                 <CardDescription>Forward-looking forecasts driven by historical variance and recent behavior.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                 {(!data?.predictions || data.predictions.length === 0) ? (
+                   <EmptyState icon={Target} title="No predictions yet" description="Predictions are derived from your Digital Twin's gap-ranked dimensions once it has enough signal." />
+                 ) : (
+                 <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-4">
                  {data?.predictions?.map((pred: any, i: number) => (
-                    <div key={i} className="p-4 bg-card border border-border rounded-xl flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                    <motion.div key={i} variants={staggerItem} className="p-4 bg-card border border-border rounded-xl flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                        <div>
                           <p className="text-xs uppercase text-muted-foreground font-bold mb-1">{pred.timeframe}</p>
                           <h4 className="font-bold text-lg">{pred.dimension}</h4>
@@ -172,21 +174,27 @@ export default function Research() {
                              <span className={`text-lg font-black font-mono ${pred.confidence > 80 ? 'text-green-500' : 'text-amber-500'}`}>{pred.confidence}%</span>
                           </div>
                        </div>
-                    </div>
+                    </motion.div>
                  ))}
+                 </motion.div>
+                 )}
               </CardContent>
             </Card>
           </motion.div>
         ) : activeTab === "behavior" ? (
-          <motion.div key="behavior" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="behavior" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
             <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Activity className="w-5 h-5 text-blue-500" /> Discovered Behavior Patterns</CardTitle>
                 <CardDescription>Latent routines and triggers detected through correlation analysis.</CardDescription>
               </CardHeader>
-              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <CardContent>
+                {(!data?.behaviorPatterns || data.behaviorPatterns.length === 0) ? (
+                  <EmptyState icon={Activity} title="No patterns detected yet" description="Keep logging activity — recurring routines and triggers will surface here once detected." />
+                ) : (
+                <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  {data?.behaviorPatterns?.map((pattern: any, i: number) => (
-                    <div key={i} className="p-4 bg-card border border-border rounded-xl flex flex-col justify-between h-full gap-4">
+                    <motion.div key={i} variants={staggerItem} className="p-4 bg-card border border-border rounded-xl flex flex-col justify-between h-full gap-4">
                        <div className="flex justify-between items-start">
                           <h4 className="font-bold text-sm">{pattern.name}</h4>
                           <Badge variant="outline" className={pattern.type === 'positive' ? "border-green-500/30 text-green-500" : "border-red-400/30 text-red-400"}>
@@ -207,21 +215,27 @@ export default function Research() {
                              <span className={`font-bold ${pattern.type === 'positive' ? 'text-green-500' : 'text-red-400'}`}>{pattern.impact}</span>
                           </div>
                        </div>
-                    </div>
+                    </motion.div>
                  ))}
+                </motion.div>
+                )}
               </CardContent>
             </Card>
           </motion.div>
         ) : (
-          <motion.div key="interventions" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="interventions" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
              <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Zap className="w-5 h-5 text-purple-500" /> Intervention Effectiveness</CardTitle>
                 <CardDescription>Evaluating the actual impact of adopted recommendations.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                 {(!data?.interventions || data.interventions.length === 0) ? (
+                   <EmptyState icon={Zap} title="No interventions tracked yet" description="Once you adopt a recommendation, its before/after impact will be measured here." />
+                 ) : (
+                 <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-4">
                  {data?.interventions?.map((inv: any, i: number) => (
-                   <div key={i} className="p-4 bg-card border border-border rounded-xl">
+                   <motion.div key={i} variants={staggerItem} className="p-4 bg-card border border-border rounded-xl">
                       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-4">
                          <h4 className="font-bold">{inv.title}</h4>
                          <Badge className={inv.status === 'success' ? "bg-green-500/10 text-green-500 border-green-500/20" : "bg-red-500/10 text-red-500 border-red-500/20"}>
@@ -242,8 +256,10 @@ export default function Research() {
                             <span className={`text-lg font-mono ${inv.adherence >= 80 ? 'text-green-500' : 'text-amber-500'}`}>{inv.adherence}%</span>
                          </div>
                       </div>
-                   </div>
+                   </motion.div>
                  ))}
+                 </motion.div>
+                 )}
               </CardContent>
             </Card>
           </motion.div>

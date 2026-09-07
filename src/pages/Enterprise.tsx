@@ -4,7 +4,19 @@ import { useAuth } from '../AuthContext.tsx';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Badge } from '../components/ui/badge.tsx';
-import { Shield, CreditCard, Bell, Cpu, Key, Download, Trash2, CheckCircle2, AlertCircle, Laptop, RefreshCw } from 'lucide-react';
+import { PageHeader } from '../components/ui/page-header.tsx';
+import { SectionTabs } from '../components/ui/section-tabs.tsx';
+import { EmptyState } from '../components/ui/empty-state.tsx';
+import { tabPanel, staggerContainer, staggerItem } from '@/lib/motion';
+import { Shield, CreditCard, Bell, Cpu, Key, Download, Trash2, CheckCircle2, Laptop, RefreshCw } from 'lucide-react';
+
+const TABS = [
+  { id: 'billing', label: 'Plans & Billing', icon: CreditCard },
+  { id: 'health', label: 'System Health', icon: Cpu },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'security', label: 'Security & GDPR', icon: Shield },
+  { id: 'developer', label: 'Developer API', icon: Key },
+];
 
 function formatUptime(seconds?: number): string {
   if (!seconds && seconds !== 0) return "—";
@@ -126,44 +138,26 @@ export default function Enterprise() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-8 pb-24 md:pb-8 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-foreground flex items-center gap-2">
-            <Shield className="w-8 h-8 text-primary" /> Enterprise Platform & Cloud
-          </h1>
-          <p className="text-muted-foreground mt-1 text-sm md:text-base">
-            SaaS subscription, cloud infrastructure health, audit logs, and security management.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 bg-muted/60 border border-border px-3 py-1.5 rounded-full text-xs font-mono">
-           <Cpu className="w-3 h-3 text-green-500" /> v9.4.0-enterprise (us-central1)
-        </div>
-      </div>
+    <div className="max-w-7xl mx-auto pb-24 md:pb-8 space-y-6">
+      <PageHeader
+        icon={Shield}
+        title="Enterprise Platform & Cloud"
+        description="SaaS subscription, cloud infrastructure health, audit logs, and security management."
+        action={
+          <div className="flex items-center gap-2 bg-muted/60 border border-border px-3 py-1.5 rounded-full text-xs font-mono">
+             <Cpu className="w-3 h-3 text-green-500" /> v9.4.0-enterprise (us-central1)
+          </div>
+        }
+      />
 
-      <div className="flex border border-border p-1 bg-muted/40 rounded-xl overflow-x-auto scrollbar-hide gap-1">
-        <button onClick={() => setActiveTab("billing")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "billing" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <CreditCard className="w-4 h-4" /> Plans & Billing
-        </button>
-        <button onClick={() => setActiveTab("health")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "health" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <Cpu className="w-4 h-4" /> System Health
-        </button>
-        <button onClick={() => setActiveTab("notifications")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "notifications" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <Bell className="w-4 h-4" /> Notifications
-        </button>
-        <button onClick={() => setActiveTab("security")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "security" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <Shield className="w-4 h-4" /> Security & GDPR
-        </button>
-        <button onClick={() => setActiveTab("developer")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "developer" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <Key className="w-4 h-4" /> Developer API
-        </button>
-      </div>
+      <SectionTabs tabs={TABS} value={activeTab} onChange={(id) => setActiveTab(id as any)} layoutId="enterprise-tab" />
 
       <AnimatePresence mode="wait">
         {activeTab === "billing" ? (
-          <motion.div key="billing" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-               <Card className={`border-2 ${subscription?.plan === 'Free' ? 'border-primary' : 'border-border'}`}>
+          <motion.div key="billing" variants={tabPanel} initial="hidden" animate="visible" exit="exit" className="space-y-6">
+            <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-3 gap-6">
+               <motion.div variants={staggerItem}>
+               <Card className={`border-2 h-full ${subscription?.plan === 'Free' ? 'border-primary' : 'border-border'}`}>
                   <CardHeader>
                      <div className="flex justify-between items-center mb-2">
                         <CardTitle className="text-xl">Free Tier</CardTitle>
@@ -181,8 +175,10 @@ export default function Enterprise() {
                      <Button variant="outline" onClick={() => handleSelectPlan("Free")} className="w-full font-bold">Switch to Free</Button>
                   </CardContent>
                </Card>
+               </motion.div>
 
-               <Card className={`border-2 ${subscription?.plan === 'Pro' ? 'border-primary' : 'border-border'}`}>
+               <motion.div variants={staggerItem}>
+               <Card className={`border-2 h-full ${subscription?.plan === 'Pro' ? 'border-primary' : 'border-border'}`}>
                   <CardHeader>
                      <div className="flex justify-between items-center mb-2">
                         <CardTitle className="text-xl">Pro Tier</CardTitle>
@@ -200,8 +196,10 @@ export default function Enterprise() {
                      <Button onClick={() => handleSelectPlan("Pro")} className="w-full font-bold">Upgrade to Pro</Button>
                   </CardContent>
                </Card>
+               </motion.div>
 
-               <Card className={`border-2 ${subscription?.plan === 'Enterprise' ? 'border-primary' : 'border-border'}`}>
+               <motion.div variants={staggerItem}>
+               <Card className={`border-2 h-full ${subscription?.plan === 'Enterprise' ? 'border-primary' : 'border-border'}`}>
                   <CardHeader>
                      <div className="flex justify-between items-center mb-2">
                         <CardTitle className="text-xl">Enterprise</CardTitle>
@@ -219,14 +217,18 @@ export default function Enterprise() {
                      <Button variant="outline" onClick={() => handleSelectPlan("Enterprise")} className="w-full font-bold">Contact Sales / Upgrade</Button>
                   </CardContent>
                </Card>
-            </div>
+               </motion.div>
+            </motion.div>
 
             <Card className="border-border">
                <CardHeader>
                   <CardTitle className="text-lg">Recent Invoices & Payment History</CardTitle>
                </CardHeader>
                <CardContent className="space-y-3">
-                  {billingInfo?.invoices?.map((inv: any) => (
+                  {(!billingInfo?.invoices || billingInfo.invoices.length === 0) ? (
+                    <EmptyState icon={CreditCard} title="No invoices yet" description="Payment history will appear here after your first paid plan charge." />
+                  ) : (
+                  billingInfo?.invoices?.map((inv: any) => (
                      <div key={inv.id} className="p-3 bg-card border border-border rounded-lg flex justify-between items-center">
                         <div>
                            <p className="font-bold text-sm">${(inv.amount / 100).toFixed(2)} {inv.currency}</p>
@@ -234,30 +236,31 @@ export default function Enterprise() {
                         </div>
                         <Badge className="bg-green-500/10 text-green-500 border-green-500/20">{inv.status.toUpperCase()}</Badge>
                      </div>
-                  ))}
+                  ))
+                  )}
                </CardContent>
             </Card>
           </motion.div>
         ) : activeTab === "health" ? (
-          <motion.div key="health" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-               <div className="p-4 bg-muted/30 border border-border rounded-xl">
+          <motion.div key="health" variants={tabPanel} initial="hidden" animate="visible" exit="exit" className="space-y-6">
+            <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 md:grid-cols-4 gap-4">
+               <motion.div variants={staggerItem} className="p-4 bg-muted/30 border border-border rounded-xl">
                   <p className="text-[10px] font-bold uppercase text-muted-foreground">Process Uptime</p>
                   <p className="text-2xl font-black font-mono mt-1 text-green-500">{formatUptime(healthData?.uptimeSeconds)}</p>
-               </div>
-               <div className="p-4 bg-muted/30 border border-border rounded-xl">
+               </motion.div>
+               <motion.div variants={staggerItem} className="p-4 bg-muted/30 border border-border rounded-xl">
                   <p className="text-[10px] font-bold uppercase text-muted-foreground">Active Instances</p>
                   <p className="text-2xl font-black font-mono mt-1 text-primary">{healthData?.activeInstances ?? 1}</p>
-               </div>
-               <div className="p-4 bg-muted/30 border border-border rounded-xl">
+               </motion.div>
+               <motion.div variants={staggerItem} className="p-4 bg-muted/30 border border-border rounded-xl">
                   <p className="text-[10px] font-bold uppercase text-muted-foreground">Avg Response Time</p>
                   <p className="text-2xl font-black font-mono mt-1 text-indigo-400">{healthData?.metrics?.avgResponseTimeMs ?? 0} ms</p>
-               </div>
-               <div className="p-4 bg-muted/30 border border-border rounded-xl">
+               </motion.div>
+               <motion.div variants={staggerItem} className="p-4 bg-muted/30 border border-border rounded-xl">
                   <p className="text-[10px] font-bold uppercase text-muted-foreground">Error Rate</p>
                   <p className="text-2xl font-black font-mono mt-1 text-emerald-400">{healthData?.metrics?.errorRate ?? '0.00%'}</p>
-               </div>
-            </div>
+               </motion.div>
+            </motion.div>
 
             <Card className="border-border">
                <CardHeader>
@@ -277,33 +280,42 @@ export default function Enterprise() {
             </Card>
           </motion.div>
         ) : activeTab === "notifications" ? (
-          <motion.div key="notifications" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="notifications" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
              <Card className="border-border">
                 <CardHeader>
                    <CardTitle className="text-lg flex items-center gap-2"><Bell className="w-5 h-5 text-indigo-400" /> Notifications & Alerts</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                   {notifs.length === 0 ? (
+                     <EmptyState icon={Bell} title="You're all caught up" description="Subscription changes and Digital Twin recalibrations will notify you here." />
+                   ) : (
+                   <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-3">
                    {notifs.map((n: any) => (
-                      <div key={n.id} className={`p-4 border rounded-xl flex justify-between items-start ${n.isRead ? 'bg-card border-border' : 'bg-primary/5 border-primary/30'}`}>
+                      <motion.div key={n.id} variants={staggerItem} className={`p-4 border rounded-xl flex justify-between items-start ${n.isRead ? 'bg-card border-border' : 'bg-primary/5 border-primary/30'}`}>
                          <div>
                             <h4 className="font-bold text-sm">{n.title}</h4>
                             <p className="text-xs text-muted-foreground mt-1">{n.message}</p>
                             <span className="text-[10px] text-muted-foreground font-mono mt-2 block">{new Date(n.createdAt).toLocaleString()}</span>
                          </div>
                          <Badge variant={n.isRead ? "outline" : "default"} className="uppercase text-[9px]">{n.type}</Badge>
-                      </div>
+                      </motion.div>
                    ))}
+                   </motion.div>
+                   )}
                 </CardContent>
              </Card>
           </motion.div>
         ) : activeTab === "security" ? (
-          <motion.div key="security" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+          <motion.div key="security" variants={tabPanel} initial="hidden" animate="visible" exit="exit" className="space-y-6">
              <Card className="border-border">
                 <CardHeader>
                    <CardTitle className="text-lg flex items-center gap-2"><Laptop className="w-5 h-5 text-blue-500" /> Active Trusted Devices</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                   {deviceList.map((d: any) => (
+                   {deviceList.length === 0 ? (
+                     <EmptyState icon={Laptop} title="No devices tracked yet" description="Devices are recorded automatically the next time you sign in." />
+                   ) : (
+                   deviceList.map((d: any) => (
                       <div key={d.id} className="p-4 bg-card border border-border rounded-xl flex justify-between items-center">
                          <div>
                             <h4 className="font-bold text-sm">{d.deviceName}</h4>
@@ -311,7 +323,8 @@ export default function Enterprise() {
                          </div>
                          <Badge className="bg-green-500/10 text-green-500 border-green-500/20">TRUSTED</Badge>
                       </div>
-                   ))}
+                   ))
+                   )}
                 </CardContent>
              </Card>
 
@@ -327,7 +340,7 @@ export default function Enterprise() {
              </Card>
           </motion.div>
         ) : (
-          <motion.div key="developer" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="developer" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
              <Card className="border-border">
                 <CardHeader>
                    <CardTitle className="text-lg flex items-center gap-2"><Key className="w-5 h-5 text-amber-500" /> Developer API Key</CardTitle>

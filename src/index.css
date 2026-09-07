@@ -46,49 +46,64 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+    --shadow-xs: var(--elevation-sm);
+    --shadow-sm: var(--elevation-sm);
+    --shadow-md: var(--elevation-md);
+    --shadow-lg: var(--elevation-lg);
+    --shadow-glow: var(--elevation-glow);
 }
 
 :root {
-    --background: #f8fafc;
-    --foreground: #020617;
+    --background: #f7f8fb;
+    --foreground: #0f1629;
     --card: #ffffff;
-    --card-foreground: #020617;
+    --card-foreground: #0f1629;
     --popover: #ffffff;
-    --popover-foreground: #020617;
-    --primary: #2563EB;
+    --popover-foreground: #0f1629;
+    --primary: #4338ca;
     --primary-foreground: #ffffff;
-    --secondary: #14B8A6;
+    --secondary: #0d9488;
     --secondary-foreground: #ffffff;
-    --muted: #f1f5f9;
+    --muted: #eef1f7;
     --muted-foreground: #64748b;
-    --accent: #F59E0B;
+    --accent: #f59e0b;
     --accent-foreground: #ffffff;
     --destructive: #ef4444;
-    --border: #e2e8f0;
-    --input: #e2e8f0;
-    --ring: #2563EB;
-    --radius: 0.75rem;
+    --border: #e5e8f0;
+    --input: #e5e8f0;
+    --ring: #4338ca;
+    --radius: 0.9rem;
+    --shadow-color: 234 60% 25%;
+    --elevation-sm: 0 1px 2px hsl(var(--shadow-color) / 0.05), 0 1px 1px hsl(var(--shadow-color) / 0.04);
+    --elevation-md: 0 4px 10px hsl(var(--shadow-color) / 0.06), 0 2px 4px hsl(var(--shadow-color) / 0.05);
+    --elevation-lg: 0 12px 28px hsl(var(--shadow-color) / 0.10), 0 4px 10px hsl(var(--shadow-color) / 0.06);
+    --elevation-glow: 0 0 0 1px hsl(var(--shadow-color) / 0.05), 0 8px 24px -6px color-mix(in srgb, var(--primary) 35%, transparent);
 }
 
 .dark {
-    --background: #0F172A;
-    --foreground: #f8fafc;
-    --card: #1e293b;
-    --card-foreground: #f8fafc;
-    --popover: #1e293b;
-    --popover-foreground: #f8fafc;
-    --primary: #2563EB;
+    --background: #0a0e1a;
+    --foreground: #f1f5f9;
+    --card: #12172a;
+    --card-foreground: #f1f5f9;
+    --popover: #12172a;
+    --popover-foreground: #f1f5f9;
+    --primary: #6366f1;
     --primary-foreground: #ffffff;
-    --secondary: #14B8A6;
-    --secondary-foreground: #ffffff;
-    --muted: #334155;
-    --muted-foreground: #94a3b8;
-    --accent: #F59E0B;
-    --accent-foreground: #ffffff;
-    --destructive: #ef4444;
-    --border: #334155;
-    --input: #334155;
-    --ring: #2563EB;
+    --secondary: #2dd4bf;
+    --secondary-foreground: #04211d;
+    --muted: #1b2236;
+    --muted-foreground: #8e9bb8;
+    --accent: #fbbf24;
+    --accent-foreground: #1a1203;
+    --destructive: #f87171;
+    --border: #232a42;
+    --input: #232a42;
+    --ring: #6366f1;
+    --shadow-color: 234 80% 4%;
+    --elevation-sm: 0 1px 2px hsl(var(--shadow-color) / 0.3);
+    --elevation-md: 0 4px 12px hsl(var(--shadow-color) / 0.35);
+    --elevation-lg: 0 16px 32px hsl(var(--shadow-color) / 0.45);
+    --elevation-glow: 0 0 0 1px hsl(var(--shadow-color) / 0.4), 0 8px 24px -6px color-mix(in srgb, var(--primary) 45%, transparent);
 }
 
 [data-theme="cosmic-blue"] {
@@ -194,6 +209,14 @@ html.high-contrast {
 html.reduced-motion * {
     transition: none !important;
     animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html:not(.reduced-motion) * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
 }
 
 html.large-text {

@@ -16,6 +16,8 @@ import { useAuth } from "../AuthContext";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
+import { PageHeader } from "../components/ui/page-header.tsx";
+import { staggerContainer, staggerItem } from "@/lib/motion";
 
 export default function Community() {
   const { getToken, user } = useAuth();
@@ -101,33 +103,29 @@ export default function Community() {
       animate={{ opacity: 1, y: 0 }}
       className="space-y-8 pb-12 max-w-5xl mx-auto"
     >
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-2">
-            <Users className="w-8 h-8 text-primary" />
-            Community & Rewards
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            Compete, earn coins, and unlock exclusive rewards.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant={activeTab === "leaderboard" ? "default" : "outline"}
-            onClick={() => setActiveTab("leaderboard")}
-            className="gap-2"
-          >
-            <Trophy className="w-4 h-4" /> Leaderboard
-          </Button>
-          <Button
-            variant={activeTab === "store" ? "default" : "outline"}
-            onClick={() => setActiveTab("store")}
-            className="gap-2"
-          >
-            <ShoppingBag className="w-4 h-4" /> Rewards Store
-          </Button>
-        </div>
-      </header>
+      <PageHeader
+        icon={Users}
+        title="Community & Rewards"
+        description="Compete, earn coins, and unlock exclusive rewards."
+        action={
+          <div className="flex gap-2">
+            <Button
+              variant={activeTab === "leaderboard" ? "default" : "outline"}
+              onClick={() => setActiveTab("leaderboard")}
+              className="gap-2"
+            >
+              <Trophy className="w-4 h-4" /> Leaderboard
+            </Button>
+            <Button
+              variant={activeTab === "store" ? "default" : "outline"}
+              onClick={() => setActiveTab("store")}
+              className="gap-2"
+            >
+              <ShoppingBag className="w-4 h-4" /> Rewards Store
+            </Button>
+          </div>
+        }
+      />
 
       {/* --- STORE TAB --- */}
       {activeTab === "store" && (
@@ -165,10 +163,10 @@ export default function Community() {
             )}
           </AnimatePresence>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {storeItems.map((item, i) => (
+              <motion.div key={i} variants={staggerItem}>
               <Card
-                key={i}
                 className="border-border hover:border-primary/50 transition-colors flex flex-col"
               >
                 <CardContent className="p-6 flex flex-col h-full items-center text-center">
@@ -195,8 +193,9 @@ export default function Community() {
                   </Button>
                 </CardContent>
               </Card>
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
         </motion.div>
       )}
 

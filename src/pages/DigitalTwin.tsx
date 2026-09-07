@@ -44,6 +44,10 @@ import {
   PolarGrid,
   PolarAngleAxis,
 } from "recharts";
+import { PageHeader } from "../components/ui/page-header.tsx";
+import { SectionTabs } from "../components/ui/section-tabs.tsx";
+import { EmptyState } from "../components/ui/empty-state.tsx";
+import { staggerContainer, staggerItem } from "@/lib/motion";
 
 const DEFAULT_TWIN_STATES: Record<string, any> = {
   physical: { score: 65, trend: "stable", confidence: 50, lastUpdated: "", supportingEvidence: "Onboarding questionnaire answers", aiSummary: "Physical state is moderately active based on baseline parameters." },
@@ -358,37 +362,30 @@ export default function DigitalTwin() {
       </AnimatePresence>
 
       {/* Header Banner */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-border pb-6">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight mb-2 flex items-center gap-3">
-            <div className="p-2.5 bg-primary/10 rounded-xl">
-              <Network className="w-8 h-8 text-primary" />
+      <PageHeader
+        icon={Network}
+        title={t("twin.title", "InnerVerse Digital Twin")}
+        description={t("twin.subtitle", "Your biological health model synced continuously with wearable streams and biometric telemetry.")}
+        action={
+          <div className="flex items-center gap-4 bg-card p-4 rounded-xl border border-border">
+            <div className="flex flex-col">
+              <span className="text-xs text-muted-foreground uppercase tracking-widest font-bold">Health Level</span>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <Trophy className="w-5 h-5 text-yellow-500" />
+                <span className="text-xl font-black">Level {currentLevel}</span>
+              </div>
             </div>
-            {t("twin.title", "InnerVerse Digital Twin")}
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            {t("twin.subtitle", "Your biological health model synced continuously with wearable streams and biometric telemetry.")}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-4 bg-card p-4 rounded-xl border border-border self-start md:self-auto">
-          <div className="flex flex-col">
-            <span className="text-xs text-muted-foreground uppercase tracking-widest font-bold">Health Level</span>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <Trophy className="w-5 h-5 text-yellow-500" />
-              <span className="text-xl font-black">Level {currentLevel}</span>
-            </div>
-          </div>
-          <div className="w-px h-10 bg-border"></div>
-          <div className="flex flex-col">
-            <span className="text-xs text-muted-foreground uppercase tracking-widest font-bold">Sovereign XP</span>
-            <div className="flex items-center gap-1 mt-0.5">
-              <Zap className="w-5 h-5 text-indigo-400 fill-indigo-400" />
-              <span className="text-xl font-black text-foreground font-mono">{currentXP} XP</span>
+            <div className="w-px h-10 bg-border"></div>
+            <div className="flex flex-col">
+              <span className="text-xs text-muted-foreground uppercase tracking-widest font-bold">Sovereign XP</span>
+              <div className="flex items-center gap-1 mt-0.5">
+                <Zap className="w-5 h-5 text-indigo-400 fill-indigo-400" />
+                <span className="text-xl font-black text-foreground font-mono">{currentXP} XP</span>
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        }
+      />
 
       {/* Grid of Twin Presentation */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -575,44 +572,19 @@ export default function DigitalTwin() {
         {/* Right Column: Narrative Tabs (Digital Twin Engine vs Timeline vs Badges) */}
         <div className="lg:col-span-7 space-y-6">
           {/* Navigation Tab Toggles */}
-          <div className="flex border border-border p-1 bg-muted/40 rounded-xl flex-wrap md:flex-nowrap gap-1 overflow-x-auto scrollbar-hide">
-            <button
-              onClick={() => setActiveTab("twin_engine")}
-              className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[140px] ${activeTab === "twin_engine" ? "bg-card text-foreground shadow-sm border border-border/80 scale-[1.01]" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <Network className="w-4 h-4" /> 16-Domain Digital Twin
-            </button>
-            <button
-              onClick={() => setActiveTab("simulation")}
-              className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[140px] ${activeTab === "simulation" ? "bg-card text-foreground shadow-sm border border-border/80 scale-[1.01]" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <Zap className="w-4 h-4" /> Simulate Future
-            </button>
-            <button
-              onClick={() => setActiveTab("timeline")}
-              className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[140px] ${activeTab === "timeline" ? "bg-card text-foreground shadow-sm border border-border/80 scale-[1.01]" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <Calendar className="w-4 h-4" /> Timeline ({timeline.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("badges")}
-              className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[140px] ${activeTab === "badges" ? "bg-card text-foreground shadow-sm border border-border/80 scale-[1.01]" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <Award className="w-4 h-4" /> Badges ({badges.filter(b => b.unlocked).length}/8)
-            </button>
-            <button
-              onClick={() => setActiveTab("history")}
-              className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[140px] ${activeTab === "history" ? "bg-card text-foreground shadow-sm border border-border/80 scale-[1.01]" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <History className="w-4 h-4" /> Ledger ({history.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("research")}
-              className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[140px] ${activeTab === "research" ? "bg-card text-foreground shadow-sm border border-border/80 scale-[1.01]" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <Brain className="w-4 h-4" /> Research Data
-            </button>
-          </div>
+          <SectionTabs
+            layoutId="twin-tab-highlight"
+            value={activeTab}
+            onChange={(id) => setActiveTab(id as typeof activeTab)}
+            tabs={[
+              { id: "twin_engine", label: "16-Domain Twin", icon: Network },
+              { id: "simulation", label: "Simulate Future", icon: Zap },
+              { id: "timeline", label: `Timeline (${timeline.length})`, icon: Calendar },
+              { id: "badges", label: `Badges (${badges.filter(b => b.unlocked).length}/8)`, icon: Award },
+              { id: "history", label: `Ledger (${history.length})`, icon: History },
+              { id: "research", label: "Research Data", icon: Brain },
+            ]}
+          />
 
           <AnimatePresence mode="wait">
             {activeTab === "twin_engine" ? (
@@ -643,13 +615,19 @@ export default function DigitalTwin() {
                   </CardHeader>
                   <CardContent className="space-y-6">
                     {/* Grid of 16 states */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <motion.div
+                      variants={staggerContainer}
+                      initial="hidden"
+                      animate="visible"
+                      className="grid grid-cols-2 sm:grid-cols-4 gap-3"
+                    >
                       {DIMENSIONS.map((dim) => {
                         const stateValue = twin?.[dim.key] || DEFAULT_TWIN_STATES[dim.key];
                         const isSelected = selectedTwinKey === dim.key;
                         const Icon = dim.icon;
                         return (
                           <motion.div
+                            variants={staggerItem}
                             whileHover={{ scale: 1.02 }}
                             onClick={() => setSelectedTwinKey(dim.key)}
                             key={dim.key}
@@ -680,7 +658,7 @@ export default function DigitalTwin() {
                           </motion.div>
                         );
                       })}
-                    </div>
+                    </motion.div>
 
                     {/* Diagnostic Detail Panel */}
                     {selectedTwinKey && (() => {
@@ -997,11 +975,11 @@ export default function DigitalTwin() {
                         })}
                       </div>
                     ) : (
-                      <div className="text-center py-12 bg-muted/20 border border-dashed rounded-xl border-border">
-                        <Bookmark className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
-                        <p className="text-sm font-semibold text-muted-foreground">No events found matching this filter.</p>
-                        <p className="text-xs text-muted-foreground/80 mt-1">Start tracking to construct your digital twin timeline.</p>
-                      </div>
+                      <EmptyState
+                        icon={Bookmark}
+                        title="No events found matching this filter."
+                        description="Start tracking to construct your digital twin timeline."
+                      />
                     )}
                   </CardContent>
                 </Card>
@@ -1039,11 +1017,17 @@ export default function DigitalTwin() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <motion.div
+                      variants={staggerContainer}
+                      initial="hidden"
+                      animate="visible"
+                      className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+                    >
                       {badges.map((b) => {
                         const gradient = getBadgeGradientColor(b.id);
                         return (
                           <motion.div
+                            variants={staggerItem}
                             whileHover={{ scale: 1.02 }}
                             onClick={() => setSelectedBadge(b)}
                             key={b.id}
@@ -1073,7 +1057,7 @@ export default function DigitalTwin() {
                           </motion.div>
                         );
                       })}
-                    </div>
+                    </motion.div>
                   </CardContent>
                 </Card>
 
@@ -1131,11 +1115,11 @@ export default function DigitalTwin() {
                         <span className="animate-spin mr-2">●</span> Loading clinical ledger...
                       </div>
                     ) : history.length === 0 ? (
-                      <div className="text-center p-12 border border-dashed border-border rounded-xl">
-                        <History className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-                        <p className="text-sm font-semibold text-foreground">No historical snapshotted logs yet</p>
-                        <p className="text-xs text-muted-foreground mt-1">Recalibrate your twin in the "16-Domain Digital Twin" tab above to establish snapshots.</p>
-                      </div>
+                      <EmptyState
+                        icon={History}
+                        title="No historical snapshotted logs yet"
+                        description='Recalibrate your twin in the "16-Domain Digital Twin" tab above to establish snapshots.'
+                      />
                     ) : (
                       <div className="relative border-l border-border pl-6 space-y-6 ml-3">
                         {history.map((snap: any) => {

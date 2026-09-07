@@ -51,6 +51,9 @@ import {
   Globe,
 } from "lucide-react";
 import { useTheme } from "../components/ThemeProvider.tsx";
+import { PageHeader } from "../components/ui/page-header.tsx";
+import { EmptyState } from "../components/ui/empty-state.tsx";
+import { staggerContainer, staggerItem } from "@/lib/motion";
 
 const categories = [
   { id: "account", name: "Account Settings", icon: User },
@@ -2113,36 +2116,37 @@ export default function Settings() {
       transition={{ duration: 0.5 }}
       className="pb-12 max-w-6xl mx-auto h-[calc(100vh-6rem)] flex flex-col"
     >
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border pb-4 mb-6 shrink-0">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight mb-2 flex items-center gap-2">
-            InnerVerse OS Settings
-            <AnimatePresence>
-              {successMsg && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.8 }}
-                  className="ml-2 text-xs font-semibold bg-green-500/20 text-green-500 px-2 py-1 rounded-md flex items-center gap-1"
-                >
-                  <CheckCircle2 className="w-3 h-3" /> {successMsg}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </h1>
-          <p className="text-muted-foreground">
-            Command center for your holistic digital twin.
-          </p>
-        </div>
-        <Button
-          onClick={handleSave}
-          disabled={loading}
-          className="gap-2 bg-gradient-to-r from-primary to-secondary text-primary-foreground shadow-lg hover:shadow-xl transition-all w-full md:w-auto"
-        >
-          <Save className="w-4 h-4" />
-          {loading ? "Applying Changes..." : "Force Save & Regenerate"}
-        </Button>
-      </header>
+      <div className="border-b border-border pb-4 mb-6 shrink-0">
+        <PageHeader
+          icon={Network}
+          title="InnerVerse OS Settings"
+          description="Command center for your holistic digital twin."
+          action={
+            <div className="flex items-center gap-2">
+              <AnimatePresence>
+                {successMsg && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="text-xs font-semibold bg-green-500/20 text-green-500 px-2 py-1 rounded-md flex items-center gap-1"
+                  >
+                    <CheckCircle2 className="w-3 h-3" /> {successMsg}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <Button
+                onClick={handleSave}
+                disabled={loading}
+                className="gap-2 bg-gradient-to-r from-primary to-secondary text-primary-foreground shadow-lg hover:shadow-xl transition-all w-full md:w-auto"
+              >
+                <Save className="w-4 h-4" />
+                {loading ? "Applying Changes..." : "Force Save & Regenerate"}
+              </Button>
+            </div>
+          }
+        />
+      </div>
 
       <div className="flex gap-8 flex-1 overflow-hidden relative">
         {/* Mobile menu toggle */}
@@ -2173,38 +2177,56 @@ export default function Settings() {
             />
           </div>
 
-          <div className="space-y-1">
-            {filteredCategories.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => {
-                  setActiveCategory(cat.id);
-                  setIsMobileMenuOpen(false);
-                }}
-                className={`
-                  w-full flex items-center justify-between p-3 rounded-xl transition-all text-sm
-                  ${
-                    activeCategory === cat.id
-                      ? "bg-primary/10 text-primary font-bold"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground font-medium"
-                  }
-                `}
-              >
-                <div className="flex items-center gap-3">
-                  <cat.icon className="w-4 h-4 shrink-0" />
-                  <span className="truncate text-left">{cat.name}</span>
-                </div>
-                {activeCategory === cat.id && (
-                  <ChevronRight className="w-4 h-4" />
-                )}
-              </button>
-            ))}
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            animate="visible"
+            className="space-y-1"
+          >
+            {filteredCategories.map((cat) => {
+              const isActive = activeCategory === cat.id;
+              return (
+                <motion.button
+                  variants={staggerItem}
+                  key={cat.id}
+                  onClick={() => {
+                    setActiveCategory(cat.id);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`
+                    relative w-full flex items-center justify-between p-3 rounded-xl transition-colors text-sm
+                    ${
+                      isActive
+                        ? "text-primary font-bold"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground font-medium"
+                    }
+                  `}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="settings-category-highlight"
+                      className="absolute inset-0 rounded-xl bg-primary/10"
+                      transition={{ type: "spring", stiffness: 500, damping: 40 }}
+                    />
+                  )}
+                  <div className="relative flex items-center gap-3">
+                    <cat.icon className="w-4 h-4 shrink-0" />
+                    <span className="truncate text-left">{cat.name}</span>
+                  </div>
+                  {isActive && (
+                    <ChevronRight className="relative w-4 h-4" />
+                  )}
+                </motion.button>
+              );
+            })}
             {filteredCategories.length === 0 && (
-              <p className="text-center text-sm text-muted-foreground py-4">
-                No categories found matching "{searchQuery}"
-              </p>
+              <EmptyState
+                icon={Search}
+                title="No categories found"
+                description={`Nothing matches "${searchQuery}".`}
+              />
             )}
-          </div>
+          </motion.div>
         </div>
 
         {/* Main Content Area */}

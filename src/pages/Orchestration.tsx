@@ -4,12 +4,25 @@ import { useAuth } from '../AuthContext.tsx';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Badge } from '../components/ui/badge.tsx';
-import { Target, Compass, GitMerge, BrainCircuit, Play, BarChart, Flag, CalendarCheck, ShieldAlert, CheckCircle, Clock } from 'lucide-react';
+import { PageHeader } from '../components/ui/page-header.tsx';
+import { SectionTabs } from '../components/ui/section-tabs.tsx';
+import { EmptyState } from '../components/ui/empty-state.tsx';
+import { PageLoader } from '../components/ui/skeleton.tsx';
+import { tabPanel, staggerContainer, staggerItem } from '@/lib/motion';
+import { Target, Compass, GitMerge, BrainCircuit, Play, BarChart, CalendarCheck, ShieldAlert, CheckCircle, Clock } from 'lucide-react';
+
+const TABS = [
+  { id: 'missions', label: 'Missions', icon: Compass },
+  { id: 'goals', label: 'Goals', icon: Target },
+  { id: 'planning', label: 'Planning', icon: CalendarCheck },
+  { id: 'decision', label: 'Decisions', icon: GitMerge },
+  { id: 'reviews', label: 'Reviews', icon: BarChart },
+];
 
 export default function Orchestration() {
   const { getToken, user } = useAuth();
   const [activeTab, setActiveTab] = useState<"missions" | "goals" | "planning" | "decision" | "reviews">("missions");
-  
+
   const [missions, setMissions] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   const [plans, setPlans] = useState<any[]>([]);
@@ -32,7 +45,7 @@ export default function Orchestration() {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      
+
       if (data.missions) setMissions(data.missions);
       if (data.goals) setGoals(data.goals);
       if (data.plans) setPlans(data.plans);
@@ -93,81 +106,64 @@ export default function Orchestration() {
     }
   };
 
-  if (loading) {
-    return <div className="p-8 flex justify-center items-center h-full"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
-  }
+  if (loading) return <PageLoader />;
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-8 pb-24 md:pb-8 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-foreground flex items-center gap-2">
-            <Compass className="w-8 h-8 text-primary" /> Autonomous Life Orchestrator
-          </h1>
-          <p className="text-muted-foreground mt-1 text-sm md:text-base">
-            Your Chief AI Architect for strategy, planning, execution, and long-term human development.
-          </p>
-        </div>
-        <Button className="font-bold flex items-center gap-2">
-           <Play className="w-4 h-4" /> Run Strategic Review
-        </Button>
-      </div>
+    <div className="max-w-7xl mx-auto pb-24 md:pb-8 space-y-6">
+      <PageHeader
+        icon={Compass}
+        title="Autonomous Life Orchestrator"
+        description="Your Chief AI Architect for strategy, planning, execution, and long-term human development."
+        action={<Button className="font-bold flex items-center gap-2"><Play className="w-4 h-4" /> Run Strategic Review</Button>}
+      />
 
-      <div className="flex border border-border p-1 bg-muted/40 rounded-xl overflow-x-auto scrollbar-hide gap-1">
-        <button onClick={() => setActiveTab("missions")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "missions" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <Compass className="w-4 h-4" /> Missions
-        </button>
-        <button onClick={() => setActiveTab("goals")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "goals" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <Target className="w-4 h-4" /> Goals
-        </button>
-        <button onClick={() => setActiveTab("planning")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "planning" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <CalendarCheck className="w-4 h-4" /> Planning
-        </button>
-        <button onClick={() => setActiveTab("decision")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "decision" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <GitMerge className="w-4 h-4" /> Decisions
-        </button>
-        <button onClick={() => setActiveTab("reviews")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "reviews" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <BarChart className="w-4 h-4" /> Reviews
-        </button>
-      </div>
+      <SectionTabs tabs={TABS} value={activeTab} onChange={(id) => setActiveTab(id as any)} layoutId="orchestration-tab" />
 
       <AnimatePresence mode="wait">
         {activeTab === "missions" ? (
-          <motion.div key="missions" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="missions" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
             <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Compass className="w-5 h-5 text-indigo-400" /> Life Missions</CardTitle>
                 <CardDescription>Core pillars driving your long-term holistic development.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {missions.map(mission => (
-                  <div key={mission.id} className="p-4 bg-muted/20 border border-border rounded-xl">
-                    <div className="flex justify-between items-start mb-2">
-                       <h3 className="font-bold text-lg">{mission.title}</h3>
-                       <Badge className="bg-primary/10 text-primary border-primary/20">Alignment: {mission.alignmentScore}%</Badge>
-                    </div>
-                    <p className="text-sm text-foreground mb-4">{mission.vision}</p>
-                    <div className="flex gap-2">
-                       <Button size="sm" variant="secondary" className="h-8 text-xs">View Goals</Button>
-                       <Button size="sm" variant="outline" className="h-8 text-xs">Strategic Alignment Check</Button>
-                    </div>
-                  </div>
-                ))}
+                {missions.length === 0 && (
+                  <EmptyState icon={Compass} title="No missions defined yet" description="Define a long-term mission to anchor your goals and daily plans." />
+                )}
+                <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-4">
+                  {missions.map(mission => (
+                    <motion.div key={mission.id} variants={staggerItem} className="p-4 bg-muted/20 border border-border rounded-xl">
+                      <div className="flex justify-between items-start mb-2">
+                         <h3 className="font-bold text-lg">{mission.title}</h3>
+                         <Badge className="bg-primary/10 text-primary border-primary/20">Alignment: {mission.alignmentScore}%</Badge>
+                      </div>
+                      <p className="text-sm text-foreground mb-4">{mission.vision}</p>
+                      <div className="flex gap-2">
+                         <Button size="sm" variant="secondary" className="h-8 text-xs" onClick={() => setActiveTab("goals")}>View Goals</Button>
+                         <Button size="sm" variant="outline" className="h-8 text-xs">Strategic Alignment Check</Button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </motion.div>
                 <Button onClick={handleDefineMission} className="w-full border-dashed border-2 bg-transparent text-foreground hover:bg-muted/50" variant="outline">+ Define New Mission</Button>
               </CardContent>
             </Card>
           </motion.div>
         ) : activeTab === "goals" ? (
-          <motion.div key="goals" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="goals" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
             <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Target className="w-5 h-5 text-green-500" /> Goal Orchestration</CardTitle>
                 <CardDescription>Hierarchical adaptive goals managed by the AI Supervisor.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
+                {goals.length === 0 ? (
+                  <EmptyState icon={Target} title="No goals yet" description="Goals appear here once a mission generates them, or as you define your own." />
+                ) : (
+                <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-4">
                   {goals.map(goal => (
-                    <div key={goal.id} className="flex flex-col md:flex-row justify-between md:items-center p-4 border border-border rounded-xl gap-4">
+                    <motion.div key={goal.id} variants={staggerItem} className="flex flex-col md:flex-row justify-between md:items-center p-4 border border-border rounded-xl gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
                            <Badge variant="outline" className="text-[10px] uppercase">{goal.domain}</Badge>
@@ -181,7 +177,12 @@ export default function Orchestration() {
                                  <span>{goal.progress}%</span>
                               </div>
                               <div className="h-1.5 w-full bg-muted overflow-hidden rounded-full">
-                                <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${goal.progress}%` }}></div>
+                                <motion.div
+                                  className="h-full bg-primary rounded-full"
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${goal.progress}%` }}
+                                  transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                                />
                               </div>
                            </div>
                         </div>
@@ -192,23 +193,27 @@ export default function Orchestration() {
                          <p className="text-[10px] uppercase font-bold text-muted-foreground mt-2">Priority</p>
                          <p className="font-black text-indigo-400">{goal.priority}/100</p>
                       </div>
-                    </div>
+                    </motion.div>
                   ))}
-                </div>
+                </motion.div>
+                )}
               </CardContent>
             </Card>
           </motion.div>
         ) : activeTab === "planning" ? (
-          <motion.div key="planning" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="planning" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
             <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><CalendarCheck className="w-5 h-5 text-primary" /> Autonomous Planning</CardTitle>
                 <CardDescription>Dynamically generated daily schedule based on goals, context, and recovery.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
+                {plans.length === 0 ? (
+                  <EmptyState icon={CalendarCheck} title="Nothing scheduled" description="Your autonomous planner will populate today's schedule as goals and tasks are created." />
+                ) : (
+                <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-4">
                   {plans.map(plan => (
-                    <div key={plan.id} className="relative pl-8 p-4 bg-card border border-border rounded-xl">
+                    <motion.div key={plan.id} variants={staggerItem} layout className="relative pl-8 p-4 bg-card border border-border rounded-xl">
                       <div className="absolute left-0 top-0 bottom-0 w-2 bg-indigo-500 rounded-l-xl"></div>
                       <div className="flex justify-between items-start">
                         <div>
@@ -224,15 +229,16 @@ export default function Orchestration() {
                            <CheckCircle className="w-3.5 h-3.5 mr-1" /> Mark Done
                         </Button>
                       </div>
-                    </div>
+                    </motion.div>
                   ))}
-                  <Button variant="secondary" className="w-full mt-4"><GitMerge className="w-4 h-4 mr-2" /> Re-plan Schedule</Button>
-                </div>
+                </motion.div>
+                )}
+                <Button variant="secondary" className="w-full mt-4"><GitMerge className="w-4 h-4 mr-2" /> Re-plan Schedule</Button>
               </CardContent>
             </Card>
           </motion.div>
         ) : activeTab === "decision" ? (
-          <motion.div key="decision" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="decision" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
              <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><GitMerge className="w-5 h-5 text-amber-500" /> Decision Intelligence</CardTitle>
@@ -252,8 +258,9 @@ export default function Orchestration() {
                    </Button>
                  </form>
 
+                 <AnimatePresence>
                  {decisionResult && (
-                   <div className="bg-muted/20 border border-border rounded-xl p-4">
+                   <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-muted/20 border border-border rounded-xl p-4">
                       <h4 className="font-bold flex items-center gap-2 mb-4"><ShieldAlert className="w-4 h-4 text-amber-500" /> Strategic Analysis</h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                          <div className="bg-card p-3 rounded-lg border border-green-500/30 shadow-xs">
@@ -275,13 +282,14 @@ export default function Orchestration() {
                          <p className="text-xs font-bold text-indigo-400 mb-1">Supervisor AI Recommendation:</p>
                          <p className="text-sm font-medium">{decisionResult.recommendation}</p>
                       </div>
-                   </div>
+                   </motion.div>
                  )}
+                 </AnimatePresence>
               </CardContent>
             </Card>
           </motion.div>
         ) : (
-          <motion.div key="reviews" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="reviews" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
             <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><BarChart className="w-5 h-5 text-blue-500" /> Strategic Reviews</CardTitle>

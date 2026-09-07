@@ -19,11 +19,15 @@ import {
   CardContent,
 } from "../components/ui/card";
 import { useAuth } from "../AuthContext";
+import { PageHeader } from "../components/ui/page-header.tsx";
+import { EmptyState } from "../components/ui/empty-state.tsx";
+import { PageLoader } from "../components/ui/skeleton.tsx";
 
 export default function Analytics() {
   const { getToken } = useAuth();
   const [data, setData] = useState({ food: [], exercise: [] });
   const [chartData, setChartData] = useState<any[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     const fetchAnalytics = async () => {
@@ -40,6 +44,8 @@ export default function Analytics() {
         }
       } catch (e) {
         console.error(e);
+      } finally {
+        setLoaded(true);
       }
     };
     fetchAnalytics();
@@ -80,24 +86,25 @@ export default function Analytics() {
     setChartData(Array.from(map.values()));
   };
 
+  if (!loaded) return <PageLoader rows={2} />;
+
+  const hasData = data.food.length > 0 || data.exercise.length > 0;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="space-y-8 pb-12 max-w-6xl mx-auto"
     >
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-2">
-            <TrendingUp className="w-8 h-8 text-primary" />
-            Analytics & Trends
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            Visualize your progress over the last 7 days.
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        icon={TrendingUp}
+        title="Analytics & Trends"
+        description="Visualize your progress over the last 7 days."
+      />
 
+      {!hasData ? (
+        <EmptyState icon={TrendingUp} title="Nothing to chart yet" description="Log a few meals and workouts on Smart Track to see your calorie trends here." />
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <Card className="border-border">
           <CardHeader>
@@ -107,7 +114,6 @@ export default function Analytics() {
             </CardTitle>
           </CardHeader>
           <CardContent className="h-72">
-            {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={chartData}
@@ -154,11 +160,6 @@ export default function Analytics() {
                   />
                 </BarChart>
               </ResponsiveContainer>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                Loading chart data...
-              </div>
-            )}
           </CardContent>
         </Card>
 
@@ -170,7 +171,6 @@ export default function Analytics() {
             </CardTitle>
           </CardHeader>
           <CardContent className="h-72">
-            {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
                   data={chartData.map((d) => ({
@@ -216,14 +216,10 @@ export default function Analytics() {
                   />
                 </LineChart>
               </ResponsiveContainer>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                Loading chart data...
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>
+      )}
     </motion.div>
   );
 }
