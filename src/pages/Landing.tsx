@@ -2,7 +2,7 @@ import React from "react";
 import { Link, Navigate } from "react-router";
 import { motion } from "motion/react";
 import { useAuth } from "../AuthContext.tsx";
-import { Button } from "../components/ui/button.tsx";
+import { buttonVariants } from "../components/ui/button.tsx";
 import { Card, CardContent } from "../components/ui/card.tsx";
 import { fadeInUp, staggerContainer, staggerItem } from "@/lib/motion";
 import {
@@ -65,9 +65,9 @@ export default function Landing() {
           </div>
           <span className="font-bold tracking-tight text-lg">InnerVerse AI</span>
         </div>
-        <Button render={<Link to="/login" />} variant="outline" size="sm">
+        <Link to="/login" className={buttonVariants({ variant: "outline", size: "sm" })}>
           Sign In
-        </Button>
+        </Link>
       </header>
 
       {/* Hero */}
@@ -103,12 +103,12 @@ export default function Landing() {
           </motion.p>
 
           <motion.div variants={staggerItem} className="mt-10 flex flex-col sm:flex-row items-center gap-3">
-            <Button render={<Link to="/login" />} size="lg" className="h-12 px-8 text-base shadow-glow">
+            <Link to="/login" className={buttonVariants({ size: "lg", className: "h-12 px-8 text-base shadow-glow" })}>
               Get Started Free <ArrowRight className="w-4 h-4" />
-            </Button>
-            <Button render={<a href="#features" />} variant="outline" size="lg" className="h-12 px-8 text-base">
+            </Link>
+            <a href="#features" className={buttonVariants({ variant: "outline", size: "lg", className: "h-12 px-8 text-base" })}>
               See how it works
-            </Button>
+            </a>
           </motion.div>
         </motion.div>
       </section>
@@ -166,9 +166,9 @@ export default function Landing() {
           <p className="text-muted-foreground mt-3 max-w-md mx-auto">
             Sign in with Google and you're onboarded in under two minutes.
           </p>
-          <Button render={<Link to="/login" />} size="lg" className="h-12 px-8 text-base mt-8 shadow-glow">
+          <Link to="/login" className={buttonVariants({ size: "lg", className: "h-12 px-8 text-base mt-8 shadow-glow" })}>
             Get Started Free <ArrowRight className="w-4 h-4" />
-          </Button>
+          </Link>
         </motion.div>
       </section>
 
