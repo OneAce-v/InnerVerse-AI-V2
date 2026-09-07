@@ -43,12 +43,18 @@ async function startServer() {
     next();
   });
 
+  // Rate limiting is meaningless (and actively gets in the way) when the whole test
+  // suite hammers the same server from one process, so it's a no-op under NODE_ENV=test -
+  // same gating as the TEST_AUTH bypass in src/middleware/auth.ts.
+  const isTestEnv = process.env.NODE_ENV === "test";
+
   // General abuse/scraping guard on the whole API surface.
   const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 300,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: () => isTestEnv,
     message: { error: "Too many requests, please try again later." },
   });
   app.use("/api", apiLimiter);
@@ -60,6 +66,7 @@ async function startServer() {
     limit: 30,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: () => isTestEnv,
     message: { error: "AI request limit reached. Please wait a few minutes and try again." },
   });
   app.use(

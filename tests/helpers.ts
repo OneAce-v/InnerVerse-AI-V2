@@ -55,3 +55,15 @@ export async function setCoins(uid: string, coins: number) {
   if (!user) throw new Error(`setCoins: no user found for uid ${uid} - call createTestUser first`);
   await db.update(profiles).set({ coins }).where(eq(profiles.userId, user.id));
 }
+
+/** The email the TEST_AUTH bypass assigns a given uid (see src/middleware/auth.ts). */
+export function emailFor(uid: string): string {
+  return `${uid}@test.local`;
+}
+
+/** Looks up a test user's internal numeric id (users.id) for direct-DB assertions/seeding. */
+export async function getUserId(uid: string): Promise<number> {
+  const [user] = await db.select().from(users).where(eq(users.uid, uid));
+  if (!user) throw new Error(`getUserId: no user found for uid ${uid} - call createTestUser first`);
+  return user.id;
+}

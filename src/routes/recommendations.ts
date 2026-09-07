@@ -24,7 +24,7 @@ router.post("/api/recommendations/generate", requireAuth, async (req: AuthReques
     const userProfile: any = profileResult[0];
 
     if (!userProfile) {
-       return Object.assign(res.status(400), { json: () => {} }).json({ error: "Profile not found. Please complete onboarding." });
+       return res.status(400).json({ error: "Profile not found. Please complete onboarding." });
     }
 
     // Fetch recent logs
@@ -116,7 +116,7 @@ router.get("/api/briefings", requireAuth, async (req: AuthRequest, res) => {
     const userProfile: any = profileResult[0];
 
     if (!userProfile) {
-      return Object.assign(res.status(400), { json: () => {} }).json({ error: "Profile not found." });
+      return res.status(400).json({ error: "Profile not found." });
     }
 
     const recentFood = await db.select()

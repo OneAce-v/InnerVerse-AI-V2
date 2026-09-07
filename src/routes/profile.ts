@@ -18,15 +18,19 @@ router.post("/api/profile", requireAuth, async (req: AuthRequest, res) => {
     
     const pData = req.body;
 
-    // Optional: Generate Archetypes with Gemini if we are saving a full profile
-    let archetypes = {
-      fitnessArchetype: null,
-      wellnessArchetype: null,
-      motivationType: null,
-      recoveryCapacity: null,
-    };
+    // Optional: Generate Archetypes with Gemini if we are saving a full profile.
+    // Left empty (not defaulted to nulls) when the goal/level/activity trio isn't present
+    // in this particular request, so a partial update (e.g. just changing dietType) doesn't
+    // wipe out archetypes computed by an earlier, fuller submission.
+    let archetypes: Record<string, string | null> = {};
 
     if (pData.primaryGoal && pData.fitnessLevel && pData.activityLevel) {
+      archetypes = {
+        fitnessArchetype: null,
+        wellnessArchetype: null,
+        motivationType: null,
+        recoveryCapacity: null,
+      };
       try {
         const prompt = `Analyze this user profile and generate 4 brief archetypes/types.
 Return strictly JSON: {"fitnessArchetype": "e.g. The Consistent Beginner", "wellnessArchetype": "e.g. The Stressed Professional", "motivationType": "e.g. Goal-Oriented", "recoveryCapacity": "e.g. Low"}
