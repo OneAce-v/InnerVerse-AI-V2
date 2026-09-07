@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "../components/ui/select.tsx";
 import { motion, AnimatePresence } from "motion/react";
+import { staggerContainer, staggerItem } from "@/lib/motion";
 import { Progress } from "../components/ui/progress.tsx";
 import { Badge } from "../components/ui/badge.tsx";
 import {
@@ -290,18 +291,19 @@ export default function Onboarding() {
             <p className="text-sm text-muted-foreground mb-4">
               Select 1 primary goal.
             </p>
-            <div className="flex flex-wrap gap-2">
+            <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="flex flex-wrap gap-2">
               {goalOpts.map((g) => (
+                <motion.div key={g} variants={staggerItem}>
                 <Badge
-                  key={g}
                   variant={formData.primaryGoal === g ? "default" : "outline"}
                   className="cursor-pointer text-sm p-2 px-3 hover:opacity-80 transition-opacity"
                   onClick={() => setSingle("primaryGoal", g)}
                 >
                   {g}
                 </Badge>
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           </div>
         );
       case 2:
@@ -501,10 +503,10 @@ export default function Onboarding() {
             <p className="text-sm text-muted-foreground mb-4">
               Do you have any health conditions? (Select 'None' if applicable)
             </p>
-            <div className="flex flex-wrap gap-2">
+            <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="flex flex-wrap gap-2">
               {healthOpts.map((e) => (
+                <motion.div key={e} variants={staggerItem}>
                 <Badge
-                  key={e}
                   variant={
                     formData.healthRestrictions.includes(e)
                       ? "destructive"
@@ -515,8 +517,9 @@ export default function Onboarding() {
                 >
                   {e}
                 </Badge>
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           </div>
         );
       case 6:
@@ -612,9 +615,14 @@ export default function Onboarding() {
       case 9:
         return (
           <div className="space-y-4 text-center">
-            <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <motion.div
+              initial={{ scale: 0.5, rotate: -15 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: "spring", stiffness: 260, damping: 18 }}
+              className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4"
+            >
               <Sparkles className="w-10 h-10 text-primary" />
-            </div>
+            </motion.div>
             <h3 className="text-3xl font-black mb-2">Final Step!</h3>
             <p className="text-muted-foreground mb-8">
               How committed are you to improving your health right now? (1-10)
@@ -634,30 +642,35 @@ export default function Onboarding() {
                 {formData.goalCommitment}
               </div>
             </div>
-            <div className="mt-8 border border-border p-4 rounded-xl bg-card inline-block text-left w-full max-w-sm mx-auto shadow-md">
-              <div className="flex justify-between items-center mb-2">
+            <motion.div
+              variants={staggerContainer}
+              initial="hidden"
+              animate="visible"
+              className="mt-8 border border-border p-4 rounded-xl bg-card inline-block text-left w-full max-w-sm mx-auto shadow-md"
+            >
+              <motion.div variants={staggerItem} className="flex justify-between items-center mb-2">
                 <span className="font-bold">Profile Completion</span>
                 <span className="font-black text-green-500">100%</span>
-              </div>
-              <div className="flex justify-between items-center text-sm mb-2">
+              </motion.div>
+              <motion.div variants={staggerItem} className="flex justify-between items-center text-sm mb-2">
                 <span className="text-muted-foreground text-xs uppercase tracking-wider">
                   AI Confidence Score
                 </span>
                 <span className="font-bold">96%</span>
-              </div>
-              <div className="flex justify-between items-center text-sm mb-2">
+              </motion.div>
+              <motion.div variants={staggerItem} className="flex justify-between items-center text-sm mb-2">
                 <span className="text-muted-foreground text-xs uppercase tracking-wider">
                   Recommendation Accuracy
                 </span>
                 <span className="font-bold text-primary">High</span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
+              </motion.div>
+              <motion.div variants={staggerItem} className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground text-xs uppercase tracking-wider">
                   Data Quality
                 </span>
                 <span className="font-bold text-green-500">Excellent</span>
-              </div>
-            </div>
+              </motion.div>
+            </motion.div>
           </div>
         );
       default:
@@ -678,7 +691,7 @@ export default function Onboarding() {
           <div className="absolute bottom-0 left-0 w-64 h-64 bg-secondary/10 rounded-full blur-3xl -z-10 -translate-x-1/2 translate-y-1/2" />
 
           <CardHeader className="border-b border-border bg-card/50">
-            <div className="flex justify-between items-center mb-2">
+            <div className="flex justify-between items-center mb-3">
               <CardTitle className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-primary" /> InnerVerse Setup
               </CardTitle>
@@ -688,9 +701,19 @@ export default function Onboarding() {
             </div>
             <Progress
               value={progress}
-              className="h-1 mb-2 bg-muted"
+              className="h-1 mb-3 bg-muted"
               indicatorClassName="bg-gradient-to-r from-primary to-secondary"
             />
+            <div className="flex gap-1.5">
+              {Array.from({ length: totalSteps }).map((_, i) => (
+                <motion.div
+                  key={i}
+                  className={`h-1.5 flex-1 rounded-full ${i <= step ? "bg-primary" : "bg-muted"}`}
+                  animate={{ opacity: i <= step ? 1 : 0.5 }}
+                  transition={{ duration: 0.3 }}
+                />
+              ))}
+            </div>
           </CardHeader>
 
           <CardContent className="min-h-[400px] flex flex-col justify-center p-6 md:p-8 relative">
