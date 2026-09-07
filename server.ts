@@ -9,131 +9,17 @@ import { getOrCreateUser } from "./src/db/users.ts";
 import { db } from "./src/db/index.ts";
 import { profiles, recommendations, foodLogs, exerciseLogs, journalEntries, users, subscriptions, payments, notifications, auditLogs, sessions, devices, systemHealth, usageStatistics, questCompletions, lifeMissions, goals, orchestrationTasks, collaborationShares, ragDocuments, biomarkers, cognitiveMemory, researchExperiments, digitalTwinSnapshots, behaviorPatterns, interventionEffectiveness, digitalTwins, apiKeys, wearableConnections, storePurchases } from "./src/db/schema.ts";
 import { eq, and, sql, desc } from "drizzle-orm";
-import { GoogleGenAI } from "@google/genai";
 import { getDigitalTwin, recalibrateDigitalTwin, updateDigitalTwinState, getDigitalTwinHistory, getDigitalTwinDependencies, getDigitalTwinContributors, getDigitalTwinGoals, getDigitalTwinConfidence } from "./src/db/digitalTwinService.ts";
 import { runSupervisor } from "./src/agents/supervisor.ts";
-import { recordAiCall, getAiAverageLatencyMs, aiMetrics } from "./src/lib/aiMetrics.ts";
+import { getAiAverageLatencyMs, aiMetrics } from "./src/lib/aiMetrics.ts";
+import { generateContentWithRetry } from "./src/lib/gemini.ts";
+import { QUEST_REWARDS, STORE_CATALOG } from "./src/lib/catalogs.ts";
+import { describeDevice, timeAgo, calculateLevel } from "./src/lib/serverHelpers.ts";
+import { requestMetrics, recordRequestMetric } from "./src/lib/requestMetrics.ts";
 
 // Global in-memory caches for API rate limit protection
 const briefingCache: Record<string, { briefing: any; conflictResolutionLog: string; timestamp: number }> = {};
 const recommendationsCache: Record<string, { recommendations: any[]; conflictResolutionLog: string; timestamp: number }> = {};
-
-// Initialize Gemini API
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
-    },
-  },
-});
-
-async function generateContentWithRetry(params: any, retries = 2, delay = 1000): Promise<any> {
-  const start = Date.now();
-  for (let i = 0; i < retries; i++) {
-    try {
-      const result = await ai.models.generateContent(params);
-      recordAiCall(Date.now() - start, false);
-      return result;
-    } catch (error: any) {
-      const errorStr = String(error?.message || error || "");
-      console.warn(`[Gemini Retry] Attempt ${i + 1} failed. Error:`, errorStr);
-      const isTransient = error?.status === 503 || error?.status === 429 || errorStr.includes("503") || errorStr.includes("429") || errorStr.includes("demand") || errorStr.includes("temporary") || errorStr.includes("UNAVAILABLE");
-      if (isTransient && i < retries - 1) {
-        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
-      } else {
-        recordAiCall(Date.now() - start, true);
-        throw error;
-      }
-    }
-  }
-}
-
-// Server-authoritative reward table for the daily quest catalog. The client only ever
-// sends a questId; the actual xp/coins granted always come from here, never the request body.
-const QUEST_REWARDS: Record<string, { xp: number; coins: number }> = {
-  "1": { xp: 50, coins: 10 }, // 10 Min Box Breathing / Bedtime CheckIn
-  "2": { xp: 50, coins: 10 }, // Upper Body Workout
-  "3": { xp: 50, coins: 10 }, // Log First Meal
-};
-
-// Server-authoritative rewards store catalog. The client only ever sends an itemId;
-// the price always comes from here, never the request body. `consumable: true` items
-// (like streak_freeze) can be bought more than once and accumulate a quantity;
-// everything else is a one-time unlock.
-const STORE_CATALOG: Record<string, { title: string; cost: number; consumable?: boolean }> = {
-  streak_freeze: { title: "Streak Freeze", cost: 50, consumable: true },
-  cosmic_theme: { title: "Cosmic Theme", cost: 200 },
-  nova_voice: { title: "Nova Voice Module", cost: 500 },
-  pro_analytics: { title: "Pro Analytics", cost: 1000 },
-};
-
-// Lightweight, dependency-free User-Agent summarizer used to label real tracked devices.
-function describeDevice(userAgent: string): { name: string; type: string } {
-  const ua = userAgent || "";
-  let browser = "Unknown Browser";
-  if (/Edg\//.test(ua)) browser = "Edge";
-  else if (/Chrome\//.test(ua) && !/Chromium/.test(ua)) browser = "Chrome";
-  else if (/Firefox\//.test(ua)) browser = "Firefox";
-  else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) browser = "Safari";
-
-  let os = "Unknown OS";
-  let type = "browser";
-  if (/iPhone|iPad/.test(ua)) { os = "iOS"; type = "mobile"; }
-  else if (/Android/.test(ua)) { os = "Android"; type = "mobile"; }
-  else if (/Mac OS X/.test(ua)) { os = "macOS"; type = "desktop"; }
-  else if (/Windows/.test(ua)) { os = "Windows"; type = "desktop"; }
-  else if (/Linux/.test(ua)) { os = "Linux"; type = "desktop"; }
-
-  return { name: `${browser} on ${os}`, type };
-}
-
-function timeAgo(date: Date | string | null | undefined): string {
-  if (!date) return "Never";
-  const ms = Date.now() - new Date(date).getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
-}
-
-function calculateLevel(xp: number): number {
-  if (xp >= 10000) return 10;
-  if (xp >= 7500) return 9;
-  if (xp >= 5000) return 8;
-  if (xp >= 3500) return 7;
-  if (xp >= 2000) return 6;
-  if (xp >= 1000) return 5;
-  if (xp >= 500) return 4;
-  if (xp >= 250) return 3;
-  if (xp >= 100) return 2;
-  return 1;
-}
-
-// Real, process-local request telemetry (not fabricated) used to back /api/admin/health.
-const requestMetrics: { timestamps: number[]; durationsMs: number[]; errorCount: number; totalCount: number } = {
-  timestamps: [],
-  durationsMs: [],
-  errorCount: 0,
-  totalCount: 0,
-};
-
-function recordRequestMetric(durationMs: number, isError: boolean) {
-  const now = Date.now();
-  requestMetrics.timestamps.push(now);
-  requestMetrics.durationsMs.push(durationMs);
-  requestMetrics.totalCount += 1;
-  if (isError) requestMetrics.errorCount += 1;
-  // Keep only the last 5 minutes of samples so the window stays current.
-  const cutoff = now - 5 * 60 * 1000;
-  while (requestMetrics.timestamps.length > 0 && requestMetrics.timestamps[0] < cutoff) {
-    requestMetrics.timestamps.shift();
-    requestMetrics.durationsMs.shift();
-  }
-}
 
 async function startServer() {
   const app = express();
