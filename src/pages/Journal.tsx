@@ -12,6 +12,8 @@ import { Textarea } from "../components/ui/textarea.tsx";
 import { BookOpen, Sparkles, Brain } from "lucide-react";
 import { Badge } from "../components/ui/badge.tsx";
 import { motion, AnimatePresence } from "motion/react";
+import { PageHeader } from "../components/ui/page-header.tsx";
+import { EmptyState } from "../components/ui/empty-state.tsx";
 
 export default function Journal() {
   const { getToken } = useAuth();
@@ -74,15 +76,11 @@ export default function Journal() {
       transition={{ duration: 0.5 }}
       className="space-y-8"
     >
-      <header>
-        <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-2">
-          <BookOpen className="w-8 h-8 text-secondary" />
-          Mindful Journaling
-        </h1>
-        <p className="text-muted-foreground">
-          Log your daily thoughts and receive AI-powered emotional analysis.
-        </p>
-      </header>
+      <PageHeader
+        icon={BookOpen}
+        title="Mindful Journaling"
+        description="Log your daily thoughts and receive AI-powered emotional analysis."
+      />
 
       <Card className="border-border">
         <CardHeader>
@@ -113,9 +111,7 @@ export default function Journal() {
       <div className="space-y-4">
         <h2 className="text-2xl font-semibold">Previous Entries</h2>
         {entries.length === 0 ? (
-          <p className="text-muted-foreground italic">
-            No entries yet. Start writing to see emotional trends.
-          </p>
+          <EmptyState icon={BookOpen} title="No entries yet" description="Start writing to see emotional trends build up over time." />
         ) : (
           <AnimatePresence>
             {entries.map((e, idx) => (
