@@ -4,7 +4,19 @@ import { useAuth } from '../AuthContext.tsx';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Badge } from '../components/ui/badge.tsx';
+import { PageHeader } from '../components/ui/page-header.tsx';
+import { SectionTabs } from '../components/ui/section-tabs.tsx';
+import { EmptyState } from '../components/ui/empty-state.tsx';
+import { PageLoader } from '../components/ui/skeleton.tsx';
+import { tabPanel, staggerContainer, staggerItem } from '@/lib/motion';
 import { Globe, Users, Database, HeartPulse, BrainCircuit, ShieldCheck, FileText, Network, Lock, Search } from 'lucide-react';
+
+const TABS = [
+  { id: 'collaboration', label: 'Collaborators', icon: Users },
+  { id: 'knowledge', label: 'Knowledge Base', icon: Database },
+  { id: 'healthcare', label: 'Healthcare', icon: HeartPulse },
+  { id: 'models', label: 'AI Orchestration', icon: BrainCircuit },
+];
 
 export default function Ecosystem() {
   const { getToken, user } = useAuth();
@@ -103,73 +115,56 @@ export default function Ecosystem() {
     }
   };
 
-  if (loading) {
-    return <div className="p-8 flex justify-center items-center h-full"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
-  }
+  if (loading) return <PageLoader />;
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-8 pb-24 md:pb-8 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-foreground flex items-center gap-2">
-            <Globe className="w-8 h-8 text-primary" /> Human Intelligence Network
-          </h1>
-          <p className="text-muted-foreground mt-1 text-sm md:text-base">
-            Collaborate with professionals, orchestrate AI models, and integrate enterprise knowledge.
-          </p>
-        </div>
-        <Button className="font-bold flex items-center gap-2">
-           <ShieldCheck className="w-4 h-4" /> Manage Data Sharing
-        </Button>
-      </div>
+    <div className="max-w-7xl mx-auto pb-24 md:pb-8 space-y-6">
+      <PageHeader
+        icon={Globe}
+        title="Human Intelligence Network"
+        description="Collaborate with professionals, orchestrate AI models, and integrate enterprise knowledge."
+        action={<Button className="font-bold flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Manage Data Sharing</Button>}
+      />
 
-      <div className="flex border border-border p-1 bg-muted/40 rounded-xl overflow-x-auto scrollbar-hide gap-1">
-        <button onClick={() => setActiveTab("collaboration")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "collaboration" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <Users className="w-4 h-4" /> Collaborators
-        </button>
-        <button onClick={() => setActiveTab("knowledge")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "knowledge" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <Database className="w-4 h-4" /> RAG Knowledge Base
-        </button>
-        <button onClick={() => setActiveTab("healthcare")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "healthcare" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <HeartPulse className="w-4 h-4" /> Healthcare Integration
-        </button>
-        <button onClick={() => setActiveTab("models")} className={`flex-1 py-3 px-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap min-w-[120px] ${activeTab === "models" ? "bg-card text-foreground shadow-sm border border-border/80" : "text-muted-foreground hover:text-foreground"}`}>
-          <BrainCircuit className="w-4 h-4" /> AI Orchestration
-        </button>
-      </div>
+      <SectionTabs tabs={TABS} value={activeTab} onChange={(id) => setActiveTab(id as any)} layoutId="ecosystem-tab" />
 
       <AnimatePresence mode="wait">
         {activeTab === "collaboration" ? (
-          <motion.div key="collaboration" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="collaboration" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
             <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Users className="w-5 h-5 text-indigo-400" /> Professional Network</CardTitle>
                 <CardDescription>Grant secure, role-based access to coaches, mentors, and doctors.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {data?.collaborators?.map((collab: any) => (
-                  <div key={collab.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 border border-border rounded-xl gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold">{collab.name}</h4>
-                        <Badge variant="outline" className="text-[10px]">{collab.org}</Badge>
+                {(!data?.collaborators || data.collaborators.length === 0) && (
+                  <EmptyState icon={Users} title="No collaborators yet" description="Invite a coach, mentor, or doctor who already has an InnerVerse account to share read-only access." />
+                )}
+                <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-4">
+                  {data?.collaborators?.map((collab: any) => (
+                    <motion.div key={collab.id} variants={staggerItem} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 border border-border rounded-xl gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold">{collab.name}</h4>
+                          <Badge variant="outline" className="text-[10px]">{collab.org}</Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">{collab.role}</p>
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {collab.permissions.map((p: string) => (
+                            <Badge key={p} variant="secondary" className="text-[10px] bg-muted text-muted-foreground"><Lock className="w-2 h-2 mr-1 inline"/> {p.replace('_', ' ')}</Badge>
+                          ))}
+                        </div>
                       </div>
-                      <p className="text-sm text-muted-foreground mt-1">{collab.role}</p>
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {collab.permissions.map((p: string) => (
-                          <Badge key={p} variant="secondary" className="text-[10px] bg-muted text-muted-foreground"><Lock className="w-2 h-2 mr-1 inline"/> {p.replace('_', ' ')}</Badge>
-                        ))}
-                      </div>
-                    </div>
-                    <Button onClick={() => handleRevoke(collab.id)} variant="outline" size="sm" className="whitespace-nowrap border-red-500/20 text-red-500 hover:bg-red-500/10">Revoke Access</Button>
-                  </div>
-                ))}
+                      <Button onClick={() => handleRevoke(collab.id)} variant="outline" size="sm" className="whitespace-nowrap border-red-500/20 text-red-500 hover:bg-red-500/10">Revoke Access</Button>
+                    </motion.div>
+                  ))}
+                </motion.div>
                 <Button onClick={handleInviteCollaborator} className="w-full border-dashed border-2 bg-transparent text-foreground hover:bg-muted/50" variant="outline">+ Invite Collaborator</Button>
               </CardContent>
             </Card>
           </motion.div>
         ) : activeTab === "knowledge" ? (
-          <motion.div key="knowledge" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="knowledge" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
             <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Database className="w-5 h-5 text-green-500" /> Personal RAG Knowledge Base</CardTitle>
@@ -180,6 +175,9 @@ export default function Ecosystem() {
                    <Search className="w-4 h-4 text-muted-foreground ml-2" />
                    <input type="text" placeholder="Search knowledge base..." className="bg-transparent border-none focus:outline-none text-sm w-full" />
                 </div>
+                {(!data?.knowledgeBase || data.knowledgeBase.length === 0) ? (
+                  <EmptyState icon={Database} title="Nothing indexed yet" description="Upload a document, book note, or lab report to give Coach Nova extra context." />
+                ) : (
                 <div className="space-y-3">
                   {data?.knowledgeBase?.map((doc: any) => (
                     <div key={doc.id} className="flex justify-between items-center p-3 bg-card border border-border rounded-xl">
@@ -193,22 +191,26 @@ export default function Ecosystem() {
                       <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Relevance: {doc.relevance}%</Badge>
                     </div>
                   ))}
-                  <Button onClick={handleAddKnowledge} variant="secondary" className="w-full mt-2"><FileText className="w-4 h-4 mr-2" /> Upload Document or Sync Library</Button>
                 </div>
+                )}
+                <Button onClick={handleAddKnowledge} variant="secondary" className="w-full mt-4"><FileText className="w-4 h-4 mr-2" /> Upload Document or Sync Library</Button>
               </CardContent>
             </Card>
           </motion.div>
         ) : activeTab === "healthcare" ? (
-          <motion.div key="healthcare" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="healthcare" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
             <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><HeartPulse className="w-5 h-5 text-red-500" /> Clinical Biomarkers</CardTitle>
                 <CardDescription>Advanced health metrics synchronized from lab reports and medical providers.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(!data?.healthcare?.biomarkers || data.healthcare.biomarkers.length === 0) ? (
+                  <EmptyState icon={HeartPulse} title="No biomarkers logged" description="Add a reading from your latest bloodwork to start tracking trends over time." />
+                ) : (
+                <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {data?.healthcare?.biomarkers?.map((marker: any) => (
-                    <div key={marker.id} className="p-4 border border-border rounded-xl bg-card relative overflow-hidden">
+                    <motion.div key={marker.id} variants={staggerItem} className="p-4 border border-border rounded-xl bg-card relative overflow-hidden">
                       <div className={`absolute top-0 right-0 w-12 h-12 -mt-4 -mr-4 rounded-full opacity-10 ${marker.trend === 'improving' ? 'bg-green-500' : 'bg-blue-500'}`}></div>
                       <p className="text-xs text-muted-foreground font-bold uppercase">{marker.name}</p>
                       <div className="mt-1 flex items-baseline gap-1">
@@ -221,9 +223,10 @@ export default function Ecosystem() {
                            {marker.trend.toUpperCase()}
                         </Badge>
                       </div>
-                    </div>
+                    </motion.div>
                   ))}
-                </div>
+                </motion.div>
+                )}
                 <div className="mt-6 flex justify-center">
                    <Button onClick={handleAddBiomarker} variant="outline"><HeartPulse className="w-4 h-4 mr-2" /> Add Biomarker Reading</Button>
                 </div>
@@ -231,16 +234,16 @@ export default function Ecosystem() {
             </Card>
           </motion.div>
         ) : (
-          <motion.div key="models" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="models" variants={tabPanel} initial="hidden" animate="visible" exit="exit">
              <Card className="border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><BrainCircuit className="w-5 h-5 text-amber-500" /> Multi-LLM Orchestration</CardTitle>
                 <CardDescription>Intelligent routing across frontier and local models based on privacy and capability.</CardDescription>
               </CardHeader>
               <CardContent>
-                 <div className="space-y-4">
+                 <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-4">
                     {data?.models?.map((model: any) => (
-                      <div key={model.id} className="p-4 bg-card border border-border rounded-xl flex flex-col md:flex-row justify-between md:items-center gap-4">
+                      <motion.div key={model.id} variants={staggerItem} className="p-4 bg-card border border-border rounded-xl flex flex-col md:flex-row justify-between md:items-center gap-4">
                          <div>
                             <div className="flex items-center gap-2 mb-1">
                               <Network className="w-4 h-4 text-primary" />
@@ -263,9 +266,9 @@ export default function Ecosystem() {
                                </Badge>
                             </div>
                          </div>
-                      </div>
+                      </motion.div>
                     ))}
-                 </div>
+                 </motion.div>
               </CardContent>
             </Card>
           </motion.div>
