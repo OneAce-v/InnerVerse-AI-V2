@@ -8,6 +8,7 @@ import { BrowserRouter, Routes, Route } from 'react-router';
 import { AuthProvider } from './AuthContext.tsx';
 import { LanguageProvider } from './LanguageContext.tsx';
 import Layout from './components/Layout.tsx';
+import Landing from './pages/Landing.tsx';
 import Login from './pages/Login.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import Onboarding from './pages/Onboarding.tsx';
@@ -32,6 +33,7 @@ export default function App() {
       <LanguageProvider>
         <BrowserRouter>
           <Routes>
+            <Route path="/welcome" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/" element={<Layout />}>

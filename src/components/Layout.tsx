@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router';
+import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAuth } from '../AuthContext.tsx';
 import { useLanguage, Language } from '../LanguageContext.tsx';
@@ -106,7 +107,7 @@ export default function Layout() {
 
   useEffect(() => {
     if (!loading && !user) {
-      navigate('/login');
+      navigate('/welcome');
     }
   }, [user, loading, navigate]);
 
@@ -305,7 +306,9 @@ export default function Layout() {
             exit="exit"
             className="max-w-6xl mx-auto p-4 md:p-8"
           >
-            <Outlet />
+            <ErrorBoundary compact>
+              <Outlet />
+            </ErrorBoundary>
           </motion.div>
         </AnimatePresence>
       </main>

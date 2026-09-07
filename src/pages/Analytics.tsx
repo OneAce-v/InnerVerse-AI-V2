@@ -11,23 +11,36 @@ import {
   Bar,
   CartesianGrid,
 } from "recharts";
-import { TrendingUp, Activity, Flame } from "lucide-react";
+import { TrendingUp, Activity, Flame, Lock, PieChart as PieChartIcon } from "lucide-react";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
 import {
   Card,
   CardHeader,
   CardTitle,
+  CardDescription,
   CardContent,
 } from "../components/ui/card";
+import { Button } from "../components/ui/button";
 import { useAuth } from "../AuthContext";
 import { PageHeader } from "../components/ui/page-header.tsx";
 import { EmptyState } from "../components/ui/empty-state.tsx";
 import { PageLoader } from "../components/ui/skeleton.tsx";
+import { useNavigate } from "react-router";
+
+const MACRO_COLORS = ["hsl(var(--primary))", "#f97316", "#eab308"];
 
 export default function Analytics() {
   const { getToken } = useAuth();
+  const navigate = useNavigate();
   const [data, setData] = useState({ food: [], exercise: [] });
   const [chartData, setChartData] = useState<any[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [ownsProAnalytics, setOwnsProAnalytics] = useState(false);
 
   useEffect(() => {
     const fetchAnalytics = async () => {
@@ -42,6 +55,11 @@ export default function Analytics() {
           setData(json);
           processChartData(json.food, json.exercise);
         }
+
+        const storeRes = await fetch("/api/store", { headers: { Authorization: `Bearer ${token}` } });
+        const storeData = await storeRes.json();
+        const proItem = storeData.items?.find((i: any) => i.id === "pro_analytics");
+        setOwnsProAnalytics(!!proItem?.owned);
       } catch (e) {
         console.error(e);
       } finally {
@@ -50,6 +68,22 @@ export default function Analytics() {
     };
     fetchAnalytics();
   }, [getToken]);
+
+  const macroTotals = (data.food as any[]).reduce(
+    (acc, f) => {
+      acc.protein += f.protein || 0;
+      acc.carbs += f.carbs || 0;
+      acc.fats += f.fats || 0;
+      return acc;
+    },
+    { protein: 0, carbs: 0, fats: 0 },
+  );
+  const macroData = [
+    { name: "Protein", value: macroTotals.protein },
+    { name: "Carbs", value: macroTotals.carbs },
+    { name: "Fats", value: macroTotals.fats },
+  ];
+  const hasMacroData = macroTotals.protein + macroTotals.carbs + macroTotals.fats > 0;
 
   const processChartData = (foods: any[], exercises: any[]) => {
     // Generate last 7 days including today
@@ -220,6 +254,55 @@ export default function Analytics() {
         </Card>
       </div>
       )}
+
+      <Card className="border-border relative overflow-hidden">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2 font-bold mb-2">
+            <PieChartIcon className="w-5 h-5 text-primary" />
+            Macro Breakdown
+          </CardTitle>
+          <CardDescription>Protein / carbs / fats split across your logged meals.</CardDescription>
+        </CardHeader>
+        <CardContent className={ownsProAnalytics ? "h-72" : "h-56"}>
+          {!ownsProAnalytics ? (
+            <div className="h-full flex flex-col items-center justify-center text-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center">
+                <Lock className="w-5.5 h-5.5 text-muted-foreground" />
+              </div>
+              <div>
+                <h4 className="font-bold text-sm text-foreground mb-1">Pro Analytics</h4>
+                <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
+                  Unlock the macro breakdown chart in the Community Rewards Store for 1000 coins.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => navigate("/community")}>
+                Open Rewards Store
+              </Button>
+            </div>
+          ) : !hasMacroData ? (
+            <EmptyState icon={PieChartIcon} title="Nothing to chart yet" description="Log a few meals with a Pro Analytics unlock to see your macro split here." />
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={macroData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={90} paddingAngle={2}>
+                  {macroData.map((entry, i) => (
+                    <Cell key={entry.name} fill={MACRO_COLORS[i]} />
+                  ))}
+                </Pie>
+                <Legend />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    borderColor: "hsl(var(--border))",
+                    borderRadius: "8px",
+                  }}
+                  itemStyle={{ color: "hsl(var(--foreground))" }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
     </motion.div>
   );
 }

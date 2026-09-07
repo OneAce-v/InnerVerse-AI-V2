@@ -654,21 +654,24 @@ export default function Onboarding() {
               </motion.div>
               <motion.div variants={staggerItem} className="flex justify-between items-center text-sm mb-2">
                 <span className="text-muted-foreground text-xs uppercase tracking-wider">
-                  AI Confidence Score
+                  Initial AI Confidence
                 </span>
-                <span className="font-bold">96%</span>
+                <span className="font-bold">50%</span>
               </motion.div>
               <motion.div variants={staggerItem} className="flex justify-between items-center text-sm mb-2">
                 <span className="text-muted-foreground text-xs uppercase tracking-wider">
-                  Recommendation Accuracy
+                  Recommendation Basis
                 </span>
-                <span className="font-bold text-primary">High</span>
+                <span className="font-bold text-primary">Questionnaire Only</span>
               </motion.div>
               <motion.div variants={staggerItem} className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground text-xs uppercase tracking-wider">
                   Data Quality
                 </span>
-                <span className="font-bold text-green-500">Excellent</span>
+                <span className="font-bold text-amber-500">Baseline</span>
+              </motion.div>
+              <motion.div variants={staggerItem} className="text-[11px] text-muted-foreground leading-relaxed mt-3 pt-3 border-t border-border/60">
+                Your Digital Twin starts at baseline confidence from these answers alone. It gets sharper automatically as you log meals, workouts, and journal entries.
               </motion.div>
             </motion.div>
           </div>
