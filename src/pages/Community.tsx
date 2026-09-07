@@ -10,6 +10,7 @@ import {
   Gift,
   Sparkles,
   AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { useAuth } from "../AuthContext";
@@ -19,14 +20,43 @@ import { Badge } from "../components/ui/badge";
 import { PageHeader } from "../components/ui/page-header.tsx";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
+const STORE_ITEM_DISPLAY: Record<string, { desc: string; icon: any; color: string; bg: string }> = {
+  streak_freeze: {
+    desc: "Protect your streak for one day of inactivity.",
+    icon: Flame,
+    color: "text-orange-500",
+    bg: "bg-orange-500/10",
+  },
+  cosmic_theme: {
+    desc: "Unlock the exclusive dark cosmic color scheme in Settings.",
+    icon: Sparkles,
+    color: "text-purple-500",
+    bg: "bg-purple-500/10",
+  },
+  nova_voice: {
+    desc: "Coach Nova reads its replies aloud in the chat.",
+    icon: Gift,
+    color: "text-blue-500",
+    bg: "bg-blue-500/10",
+  },
+  pro_analytics: {
+    desc: "Unlocks the advanced insights panel in Analytics.",
+    icon: Trophy,
+    color: "text-yellow-500",
+    bg: "bg-yellow-500/10",
+  },
+};
+
 export default function Community() {
   const { getToken, user } = useAuth();
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"leaderboard" | "store">(
     "leaderboard",
   );
-  const [myProfile, setMyProfile] = useState<any>(null);
+  const [storeItems, setStoreItems] = useState<any[]>([]);
+  const [coins, setCoins] = useState(0);
   const [purchaseMsg, setPurchaseMsg] = useState("");
+  const [purchasing, setPurchasing] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchLeaderboard = async () => {
@@ -37,11 +67,7 @@ export default function Community() {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
-        if (data.leaderboard) {
-          setLeaderboard(data.leaderboard);
-          const me = data.leaderboard.find((m: any) => m.email === user?.email);
-          if (me) setMyProfile(me);
-        }
+        if (data.leaderboard) setLeaderboard(data.leaderboard);
       } catch (e) {
         console.error(e);
       }
@@ -49,53 +75,48 @@ export default function Community() {
     fetchLeaderboard();
   }, [getToken, user]);
 
-  const handlePurchase = (item: string, cost: number) => {
-    if ((myProfile?.coins || 0) < cost) {
-      setPurchaseMsg("Not enough UI coins!");
-      setTimeout(() => setPurchaseMsg(""), 3000);
-      return;
+  const fetchStore = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch("/api/store", { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (data.items) setStoreItems(data.items);
+      setCoins(data.coins || 0);
+    } catch (e) {
+      console.error(e);
     }
-
-    // Optimistic update
-    setMyProfile((prev: any) => ({ ...prev, coins: prev.coins - cost }));
-    setPurchaseMsg(`Successfully purchased: ${item}!`);
-    setTimeout(() => setPurchaseMsg(""), 3000);
   };
 
-  const storeItems = [
-    {
-      title: "Streak Freeze",
-      desc: "Protect your streak for one day of inactivity.",
-      cost: 50,
-      icon: Flame,
-      color: "text-orange-500",
-      bg: "bg-orange-500/10",
-    },
-    {
-      title: "Cosmic Theme",
-      desc: "Unlock the exclusive dark cosmic color scheme.",
-      cost: 200,
-      icon: Sparkles,
-      color: "text-purple-500",
-      bg: "bg-purple-500/10",
-    },
-    {
-      title: "Nova Voice Module",
-      desc: "Coach Nova responds with voice synthesis.",
-      cost: 500,
-      icon: Gift,
-      color: "text-blue-500",
-      bg: "bg-blue-500/10",
-    },
-    {
-      title: "Pro Analytics",
-      desc: "Permanent unlock to advanced data insights.",
-      cost: 1000,
-      icon: Trophy,
-      color: "text-yellow-500",
-      bg: "bg-yellow-500/10",
-    },
-  ];
+  useEffect(() => {
+    fetchStore();
+  }, [getToken]);
+
+  const handlePurchase = async (itemId: string, title: string) => {
+    setPurchasing(itemId);
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/store/purchase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ itemId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCoins(data.coins);
+        setPurchaseMsg(`Successfully purchased: ${title}!`);
+        await fetchStore();
+      } else {
+        setPurchaseMsg(data.error || "Purchase failed");
+      }
+    } catch (e) {
+      console.error(e);
+      setPurchaseMsg("Purchase failed");
+    } finally {
+      setPurchasing(null);
+      setTimeout(() => setPurchaseMsg(""), 3000);
+    }
+  };
 
   return (
     <motion.div
@@ -145,7 +166,7 @@ export default function Community() {
             <div className="flex items-center gap-3 bg-yellow-500/10 px-6 py-3 rounded-2xl border border-yellow-500/20">
               <Coins className="w-8 h-8 text-yellow-500" />
               <span className="text-3xl font-black text-yellow-500">
-                {myProfile?.coins || 0}
+                {coins}
               </span>
             </div>
           </div>
@@ -164,37 +185,50 @@ export default function Community() {
           </AnimatePresence>
 
           <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {storeItems.map((item, i) => (
-              <motion.div key={i} variants={staggerItem}>
-              <Card
-                className="border-border hover:border-primary/50 transition-colors flex flex-col"
-              >
-                <CardContent className="p-6 flex flex-col h-full items-center text-center">
-                  <div
-                    className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 ${item.bg}`}
-                  >
-                    <item.icon className={`w-8 h-8 ${item.color}`} />
-                  </div>
-                  <h3 className="font-bold text-lg mb-2">{item.title}</h3>
-                  <p className="text-xs text-muted-foreground flex-grow mb-6">
-                    {item.desc}
-                  </p>
+            {storeItems.map((item) => {
+              const display = STORE_ITEM_DISPLAY[item.id];
+              const owned = item.owned > 0;
+              const isOneTimeOwned = owned && !item.consumable;
+              return (
+                <motion.div key={item.id} variants={staggerItem}>
+                <Card
+                  className="border-border hover:border-primary/50 transition-colors flex flex-col"
+                >
+                  <CardContent className="p-6 flex flex-col h-full items-center text-center">
+                    <div
+                      className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 ${display.bg}`}
+                    >
+                      <display.icon className={`w-8 h-8 ${display.color}`} />
+                    </div>
+                    <h3 className="font-bold text-lg mb-2">{item.title}</h3>
+                    <p className="text-xs text-muted-foreground flex-grow mb-6">
+                      {display.desc}
+                    </p>
+                    {item.consumable && owned && (
+                      <Badge variant="outline" className="mb-3 text-[10px]">
+                        {item.owned} in reserve
+                      </Badge>
+                    )}
 
-                  <Button
-                    className="w-full gap-2 font-bold"
-                    variant={
-                      (myProfile?.coins || 0) >= item.cost
-                        ? "default"
-                        : "secondary"
-                    }
-                    onClick={() => handlePurchase(item.title, item.cost)}
-                  >
-                    <Coins className="w-4 h-4" /> {item.cost}
-                  </Button>
-                </CardContent>
-              </Card>
-              </motion.div>
-            ))}
+                    {isOneTimeOwned ? (
+                      <Button className="w-full gap-2 font-bold" variant="secondary" disabled>
+                        <CheckCircle2 className="w-4 h-4" /> Owned
+                      </Button>
+                    ) : (
+                      <Button
+                        className="w-full gap-2 font-bold"
+                        variant={coins >= item.cost ? "default" : "secondary"}
+                        disabled={purchasing === item.id}
+                        onClick={() => handlePurchase(item.id, item.title)}
+                      >
+                        <Coins className="w-4 h-4" /> {purchasing === item.id ? "Purchasing..." : item.cost}
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+                </motion.div>
+              );
+            })}
           </motion.div>
         </motion.div>
       )}

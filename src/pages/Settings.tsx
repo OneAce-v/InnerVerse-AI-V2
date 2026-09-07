@@ -49,6 +49,7 @@ import {
   Trash2,
   Activity,
   Globe,
+  Lock,
 } from "lucide-react";
 import { useTheme } from "../components/ThemeProvider.tsx";
 import { PageHeader } from "../components/ui/page-header.tsx";
@@ -118,9 +119,22 @@ export default function Settings() {
   const [stressActive, setStressActive] = useState(false);
   const [stressLog, setStressLog] = useState<string[]>([]);
   const [stressCount, setStressCount] = useState(5);
+  const [ownedItems, setOwnedItems] = useState<Record<string, number>>({});
 
   useEffect(() => {
     fetchProfile();
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await fetch("/api/store", { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json();
+        if (data.items) {
+          setOwnedItems(Object.fromEntries(data.items.map((i: any) => [i.id, i.owned])));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    })();
   }, []);
 
   // Autosave profile mechanism
@@ -297,12 +311,21 @@ export default function Settings() {
                       name: "Midnight Focus",
                       colors: "from-slate-700 to-zinc-900",
                     },
-                  ].map((p) => (
+                  ].map((p) => {
+                    const isCosmic = p.name === "Cosmic Blue";
+                    const locked = isCosmic && !ownedItems["cosmic_theme"];
+                    return (
                     <div
                       key={p.name}
-                      onClick={() => setThemePack(packMapping[p.name])}
-                      className={`p-3 rounded-xl border-2 cursor-pointer transition-all flex flex-col items-center gap-2 ${themePack === packMapping[p.name] ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/50"}`}
+                      onClick={() => !locked && setThemePack(packMapping[p.name])}
+                      className={`relative p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${locked ? "opacity-60 cursor-not-allowed border-border bg-card" : "cursor-pointer"} ${!locked && themePack === packMapping[p.name] ? "border-primary bg-primary/5" : !locked ? "border-border bg-card hover:border-primary/50" : ""}`}
+                      title={locked ? "Unlock Cosmic Theme in the Community Rewards Store (200 coins)" : undefined}
                     >
+                      {locked && (
+                        <div className="absolute top-1.5 right-1.5 bg-muted rounded-full p-1">
+                          <Lock className="w-3 h-3 text-muted-foreground" />
+                        </div>
+                      )}
                       <div
                         className={`w-full h-12 rounded-lg bg-gradient-to-r ${p.colors}`}
                       ></div>
@@ -310,7 +333,8 @@ export default function Settings() {
                         {p.name}
                       </span>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>

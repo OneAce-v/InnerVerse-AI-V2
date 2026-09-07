@@ -7,7 +7,7 @@ import { createServer as createViteServer } from "vite";
 import { requireAuth, AuthRequest } from "./src/middleware/auth.ts";
 import { getOrCreateUser } from "./src/db/users.ts";
 import { db } from "./src/db/index.ts";
-import { profiles, recommendations, foodLogs, exerciseLogs, journalEntries, users, subscriptions, payments, notifications, auditLogs, sessions, devices, systemHealth, usageStatistics, questCompletions, lifeMissions, goals, orchestrationTasks, collaborationShares, ragDocuments, biomarkers, cognitiveMemory, researchExperiments, digitalTwinSnapshots, behaviorPatterns, interventionEffectiveness, digitalTwins, apiKeys, wearableConnections } from "./src/db/schema.ts";
+import { profiles, recommendations, foodLogs, exerciseLogs, journalEntries, users, subscriptions, payments, notifications, auditLogs, sessions, devices, systemHealth, usageStatistics, questCompletions, lifeMissions, goals, orchestrationTasks, collaborationShares, ragDocuments, biomarkers, cognitiveMemory, researchExperiments, digitalTwinSnapshots, behaviorPatterns, interventionEffectiveness, digitalTwins, apiKeys, wearableConnections, storePurchases } from "./src/db/schema.ts";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { GoogleGenAI } from "@google/genai";
 import { getDigitalTwin, recalibrateDigitalTwin, updateDigitalTwinState, getDigitalTwinHistory, getDigitalTwinDependencies, getDigitalTwinContributors, getDigitalTwinGoals, getDigitalTwinConfidence } from "./src/db/digitalTwinService.ts";
@@ -55,6 +55,17 @@ const QUEST_REWARDS: Record<string, { xp: number; coins: number }> = {
   "1": { xp: 50, coins: 10 }, // 10 Min Box Breathing / Bedtime CheckIn
   "2": { xp: 50, coins: 10 }, // Upper Body Workout
   "3": { xp: 50, coins: 10 }, // Log First Meal
+};
+
+// Server-authoritative rewards store catalog. The client only ever sends an itemId;
+// the price always comes from here, never the request body. `consumable: true` items
+// (like streak_freeze) can be bought more than once and accumulate a quantity;
+// everything else is a one-time unlock.
+const STORE_CATALOG: Record<string, { title: string; cost: number; consumable?: boolean }> = {
+  streak_freeze: { title: "Streak Freeze", cost: 50, consumable: true },
+  cosmic_theme: { title: "Cosmic Theme", cost: 200 },
+  nova_voice: { title: "Nova Voice Module", cost: 500 },
+  pro_analytics: { title: "Pro Analytics", cost: 1000 },
 };
 
 // Lightweight, dependency-free User-Agent summarizer used to label real tracked devices.
@@ -1398,6 +1409,76 @@ Estimate duration in minutes, calories burned, and total volume (if applicable).
       .limit(50);
       
       res.json({ leaderboard: topProfiles });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Rewards store: what's for sale, and what this user already owns.
+  app.get("/api/store", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+
+      const [profileResult] = await db.select().from(profiles).where(eq(profiles.userId, userResult.id));
+      const purchases = await db.select().from(storePurchases).where(eq(storePurchases.userId, userResult.id));
+
+      const owned: Record<string, number> = {};
+      for (const p of purchases) {
+        owned[p.itemId] = (owned[p.itemId] || 0) + p.quantity;
+      }
+
+      const items = Object.entries(STORE_CATALOG).map(([id, item]) => ({
+        id,
+        title: item.title,
+        cost: item.cost,
+        consumable: !!item.consumable,
+        owned: owned[id] || 0,
+      }));
+
+      res.json({ items, coins: profileResult?.coins || 0 });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Purchase a store item. Price is always looked up server-side from STORE_CATALOG and
+  // the coin deduction is atomic (the WHERE clause guards against a race spending more
+  // than the user has), so this can never be exploited to go negative or mint items for free.
+  app.post("/api/store/purchase", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+      const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+      const { itemId } = req.body;
+
+      const item = STORE_CATALOG[itemId];
+      if (!item) {
+        return res.status(400).json({ error: "Unknown itemId" });
+      }
+
+      if (!item.consumable) {
+        const [existing] = await db.select().from(storePurchases).where(and(
+          eq(storePurchases.userId, userResult.id),
+          eq(storePurchases.itemId, itemId)
+        ));
+        if (existing) {
+          return res.status(400).json({ error: "You already own this item" });
+        }
+      }
+
+      const deducted = await db.execute(sql`UPDATE profiles SET coins = coins - ${item.cost} WHERE user_id = ${userResult.id} AND coins >= ${item.cost} RETURNING coins`);
+      if (deducted.rows.length === 0) {
+        return res.status(400).json({ error: "Not enough coins" });
+      }
+
+      await db.insert(storePurchases).values({
+        userId: userResult.id,
+        itemId,
+        quantity: 1,
+        coinsCost: item.cost,
+      });
+
+      res.json({ success: true, coins: (deducted.rows[0] as any).coins, item: { id: itemId, title: item.title } });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

@@ -642,6 +642,15 @@ export const questCompletions = pgTable('quest_completions', {
   oneRewardPerQuestPerDay: unique().on(table.userId, table.questId, table.completedDate),
 }));
 
+export const storePurchases = pgTable('store_purchases', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  itemId: text('item_id').notNull(), // matches STORE_CATALOG id in server.ts
+  quantity: integer('quantity').notNull().default(1), // consumables (e.g. streak_freeze) can be bought more than once
+  coinsCost: integer('coins_cost').notNull(), // snapshot of the price paid, so a later catalog price change doesn't rewrite history
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 export const notifications = pgTable('notifications', {
   id: serial('id').primaryKey(),
   userId: integer('user_id').references(() => users.id).notNull(),
