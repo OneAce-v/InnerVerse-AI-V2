@@ -660,7 +660,8 @@ Answer naturally and directly in 1-2 short sentences. Do not use markdown. If it
   app.post("/api/journal", requireAuth, async (req: AuthRequest, res) => {
     try {
       if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-      const { content, date } = req.body;
+      const { content, date: bodyDate } = req.body;
+      const date = bodyDate || new Date().toISOString().substring(0, 10);
       const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
 
       // Analyze entry with AI
