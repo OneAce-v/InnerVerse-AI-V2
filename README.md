@@ -63,7 +63,29 @@ the frontend and API are served from one process during development.
 | `npm run preview` | Preview the built frontend via `vite preview` (frontend only, no API) |
 | `npm run lint` | Type-check the whole project (`tsc --noEmit`) — there is no separate linter configured yet |
 | `npm run db:push` | Push the Drizzle schema to Postgres |
+| `npm test` | Run the integration test suite against a real Postgres database (see below) |
 | `npm run clean` | Remove build output |
+
+## Testing
+
+`npm test` runs the real Express app (via `server.ts`) against whatever Postgres
+database your `SQL_*` env vars point to — point it at a disposable database, not
+production, since tests create real users and data. Steps:
+
+```bash
+npm run db:push   # once, to make sure the schema is current
+npm test
+```
+
+Tests authenticate via a `TEST_AUTH:<uid>` bearer token instead of a real Firebase ID
+token. That path in `src/middleware/auth.ts` only activates when `NODE_ENV=test`
+(which `npm test` sets automatically) — production deployments run with
+`NODE_ENV=production` and never accept it. See `tests/global-setup.ts` for how the
+server is started for the test run, and `tests/helpers.ts` for the test-user/auth
+helpers used across test files.
+
+CI (`.github/workflows/ci.yml`) runs `npm run lint` and `npm test` against a
+Postgres service container on every push and pull request.
 
 ## Project layout
 
@@ -84,7 +106,8 @@ src/
 
 ## Known gaps
 
-This project has no automated tests and no CI workflow yet — `npm run lint`
-(the type-checker) is the only automated check today. A few features are also
-still UI-only / mocked rather than backed by real data or a real transaction;
-these are being tracked and closed out incrementally.
+Test coverage is intentionally narrow so far — it targets the server-authoritative
+logic most worth protecting (quest reward idempotency, atomic store purchases, the
+notifications IDOR fix, the journal date fallback) rather than every route. `server.ts`
+itself is also still a single ~2,500-line file; splitting it into route modules is a
+separate, not-yet-done piece of work.

@@ -2518,9 +2518,11 @@ If there are no foods or exercises, return empty arrays.`;
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  return app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 
-startServer();
+// Exported so the test suite can await startup and close the listener during teardown
+// (see tests/global-setup.ts); normal `npm run dev` / `npm start` just let this run.
+export const serverReady = startServer();

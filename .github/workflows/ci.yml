@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: innerverse_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      SQL_HOST: localhost
+      SQL_USER: postgres
+      SQL_PASSWORD: postgres
+      SQL_DB_NAME: innerverse_ci
+      SQL_ADMIN_USER: postgres
+      SQL_ADMIN_PASSWORD: postgres
+      # The app's Gemini call sites all have deterministic heuristic fallbacks for when
+      # the API is unreachable/unauthorized, so a placeholder key is enough for CI.
+      GEMINI_API_KEY: ci-placeholder-key
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check
+        run: npm run lint
+
+      - name: Push database schema
+        run: npm run db:push
+
+      - name: Run tests
+        run: npm test
