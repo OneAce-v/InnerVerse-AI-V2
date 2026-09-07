@@ -51,6 +51,8 @@ import {
   YAxis,
 } from "recharts";
 import { useNavigate } from "react-router";
+import { PageLoader } from "../components/ui/skeleton.tsx";
+import { staggerContainer, staggerItem } from "@/lib/motion";
 
 const mockWeeklyData = [
   { name: "Mon", hdi: 70 },
@@ -280,12 +282,7 @@ export default function Dashboard() {
     fetchData();
   }, [user]);
 
-  if (loading)
-    return (
-      <div className="flex h-[50vh] items-center justify-center text-muted-foreground animate-pulse">
-        <Brain className="w-8 h-8 mr-2 animate-spin" /> Gathering Insights...
-      </div>
-    );
+  if (loading) return <PageLoader rows={4} />;
 
   let hdiScore = 82; // Base mock score
   if (profile) {
@@ -448,7 +445,8 @@ export default function Dashboard() {
                     <Brain className="w-4 h-4 mr-2 animate-spin text-primary" /> Multi-Agent team collaborating on recommendations...
                   </div>
                 ) : recommendations.length > 0 ? (
-                  recommendations.map((rec) => {
+                  <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-4">
+                  {recommendations.map((rec) => {
                     let details: any = {};
                     try {
                       details = typeof rec.content === "string" ? JSON.parse(rec.content) : rec.content || {};
@@ -485,6 +483,7 @@ export default function Dashboard() {
                     return (
                       <motion.div
                         key={rec.id}
+                        variants={staggerItem}
                         whileHover={{ scale: 1.01 }}
                         className="p-4 rounded-xl bg-card border border-border shadow-xs hover:border-primary/30 hover:shadow-md transition-all flex flex-col gap-3"
                       >
@@ -548,7 +547,8 @@ export default function Dashboard() {
                         </div>
                       </motion.div>
                     );
-                  })
+                  })}
+                  </motion.div>
                 ) : (
                   <div className="p-6 bg-muted/30 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground leading-relaxed">
                     No active agent recommendations generated yet. Log more parameters or run a recalibration on the <span className="font-bold text-foreground">Digital Twin</span> page to trigger the collaborative agentic council!
@@ -586,8 +586,9 @@ export default function Dashboard() {
           </div>
 
           {/* Smart Expandable Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Fitness Card */}
+            <motion.div variants={staggerItem}>
             <Card
               className={`border-border cursor-pointer transition-all ${expandedMetric === "fitness" ? "ring-1 ring-primary shadow-md bg-card/80" : "hover:bg-muted/30 bg-card/50"}`}
               onClick={() => toggleMetric("fitness")}
@@ -612,8 +613,10 @@ export default function Dashboard() {
                 </div>
               </CardContent>
             </Card>
+            </motion.div>
 
             {/* Sleep Card */}
+            <motion.div variants={staggerItem}>
             <Card
               className={`border-border cursor-pointer transition-all ${expandedMetric === "sleep" ? "ring-1 ring-primary shadow-md bg-card/80" : "hover:bg-muted/30 bg-card/50"}`}
               onClick={() => toggleMetric("sleep")}
@@ -638,8 +641,10 @@ export default function Dashboard() {
                 </div>
               </CardContent>
             </Card>
+            </motion.div>
 
             {/* Nutrition Card */}
+            <motion.div variants={staggerItem}>
             <Card
               className={`border-border cursor-pointer transition-all ${expandedMetric === "nutrition" ? "ring-1 ring-primary shadow-md bg-card/80" : "hover:bg-muted/30 bg-card/50"}`}
               onClick={() => toggleMetric("nutrition")}
@@ -664,7 +669,8 @@ export default function Dashboard() {
                 </div>
               </CardContent>
             </Card>
-          </div>
+            </motion.div>
+          </motion.div>
 
           {/* Deep Analytics Expansion Area */}
           <AnimatePresence>
@@ -832,10 +838,12 @@ export default function Dashboard() {
               </Button>
             </div>
 
-            <div className="space-y-3">
+            <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-3">
               {quests.map((q) => (
-                <div
+                <motion.div
                   key={q.id}
+                  variants={staggerItem}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => toggleQuest(q.id)}
                   className={`group flex items-center justify-between p-4 rounded-xl border transition-all ${q.status === "completed" ? "bg-muted/20 border-border opacity-60" : "bg-card border-border hover:border-primary/50 shadow-sm cursor-pointer"}`}
                 >
@@ -843,9 +851,13 @@ export default function Dashboard() {
                     <div
                       className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 border transition-colors ${q.status === "completed" ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground group-hover:border-primary"}`}
                     >
-                      {q.status === "completed" && (
-                        <CheckCircle2 className="w-3 h-3" />
-                      )}
+                      <AnimatePresence>
+                        {q.status === "completed" && (
+                          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} transition={{ type: "spring", stiffness: 500, damping: 25 }}>
+                            <CheckCircle2 className="w-3 h-3" />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                     <div>
                       <p
@@ -858,9 +870,9 @@ export default function Dashboard() {
                       </p>
                     </div>
                   </div>
-                </div>
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           </div>
 
           <div className="pt-4 flex justify-end">
