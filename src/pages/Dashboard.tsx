@@ -194,35 +194,33 @@ export default function Dashboard() {
 
   const toggleQuest = async (id: number) => {
     const quest = quests.find((q) => q.id === id);
-    if (!quest) return;
+    // Completed quests are already synced with the server and can't be undone -
+    // this is a one-way action, not a checkbox to flip back and forth.
+    if (!quest || quest.status === "completed") return;
 
-    if (quest.status === "pending") {
-      try {
-        const token = await getToken();
-        await fetch("/api/quests/complete", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ questId: id, xpGain: 50, coinsGain: 10 }),
-        });
-      } catch (e) {
-        console.error("Failed to sync quest completion", e);
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/quests/complete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ questId: id }),
+      });
+      const data = await res.json();
+      if (data.profile) setProfile(data.profile);
+
+      if (!data.alreadyCompletedToday) {
+        setShowReward(`+50 XP for ${quest.name}!`);
+        setTimeout(() => setShowReward(null), 3000);
       }
-
-      // Trigger reward animation
-      setShowReward(`+50 XP for ${quest.name}!`);
-      setTimeout(() => setShowReward(null), 3000);
-      setProfile((prev: any) => ({ ...prev, coins: (prev?.coins || 0) + 10 }));
+    } catch (e) {
+      console.error("Failed to sync quest completion", e);
     }
 
     setQuests((prev) =>
-      prev.map((q) =>
-        q.id === id
-          ? { ...q, status: q.status === "completed" ? "pending" : "completed" }
-          : q,
-      ),
+      prev.map((q) => (q.id === id ? { ...q, status: "completed" } : q)),
     );
   };
 
@@ -271,6 +269,22 @@ export default function Dashboard() {
           console.error("Failed to fetch recommendations:", err);
           setLoadingRecs(false);
         });
+
+      // Real completed-today state, so the checklist doesn't reset to all-pending
+      // on every page load regardless of what's actually been done today.
+      fetch("/api/quests/status", {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          const completedToday: string[] = data.completedToday || [];
+          setQuests((prev) =>
+            prev.map((q) =>
+              completedToday.includes(String(q.id)) ? { ...q, status: "completed" } : q,
+            ),
+          );
+        })
+        .catch((err) => console.error("Failed to fetch quest status:", err));
     } catch (e) {
       console.error(e);
     } finally {
@@ -1181,18 +1195,16 @@ export default function Dashboard() {
                           });
                           
                           // Award rewards! Sync quest completions
-                          await fetch("/api/quests/complete", {
+                          const questRes = await fetch("/api/quests/complete", {
                             method: "POST",
                             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                            body: JSON.stringify({ questId: 1, xpGain: 30, coinsGain: 15 })
+                            body: JSON.stringify({ questId: 1 })
                           });
-
-                          // Update profile locally if profile is ready
-                          setProfile((prev: any) => ({
-                            ...prev,
-                            xp: (prev?.xp || 0) + 30,
-                            coins: (prev?.coins || 0) + 15
-                          }));
+                          const questData = await questRes.json();
+                          if (questData.profile) setProfile(questData.profile);
+                          setQuests((prev) =>
+                            prev.map((q) => (q.id === 1 ? { ...q, status: "completed" } : q)),
+                          );
 
                           setRoutineStage("summary");
                         } catch (e) {

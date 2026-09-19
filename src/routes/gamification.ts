@@ -108,6 +108,26 @@ router.get("/api/badges", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+// Read-only: which quests this user has already completed today, so the UI can show
+// real checked/unchecked state on load instead of always starting from "pending" and
+// letting a completed quest look re-completable.
+router.get("/api/quests/status", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+    const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
+    const today = new Date().toISOString().substring(0, 10);
+
+    const completions = await db.select().from(questCompletions).where(and(
+      eq(questCompletions.userId, userResult.id),
+      eq(questCompletions.completedDate, today)
+    ));
+
+    res.json({ completedToday: completions.map(c => c.questId) });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Quest completion API
 // Rewards are fixed server-side per quest and granted at most once per quest per day,
 // so a client can never mint arbitrary XP/coins by replaying this call.

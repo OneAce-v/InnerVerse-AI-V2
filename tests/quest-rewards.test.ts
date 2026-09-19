@@ -69,3 +69,37 @@ describe("GET /api/profile", () => {
     expect(res.body.profile.coins).toBe(10);
   });
 });
+
+// Regression check for a bug found while clicking through the real Dashboard:
+// the daily-quest checklist was pure client-side state that always started
+// "pending" on every page load, regardless of what was actually completed
+// that day server-side - so a refresh made a done quest look re-doable, and
+// clicking it again showed a fake reward toast even though the server
+// correctly granted nothing the second time.
+describe("GET /api/quests/status", () => {
+  it("is empty before any quest is completed today", async () => {
+    const uid = await createTestUser("quest-status-empty");
+    const res = await apiGet("/api/quests/status", uid);
+    expect(res.status).toBe(200);
+    expect(res.body.completedToday).toEqual([]);
+  });
+
+  it("lists exactly the quests completed today, not ones that were never touched", async () => {
+    const uid = await createTestUser("quest-status-partial");
+    await apiPost("/api/quests/complete", uid, { questId: "1" });
+
+    const res = await apiGet("/api/quests/status", uid);
+    expect(res.body.completedToday).toEqual(["1"]);
+  });
+
+  it("reflects multiple completions and only this user's own", async () => {
+    const uid = await createTestUser("quest-status-multi");
+    const otherUid = await createTestUser("quest-status-other");
+    await apiPost("/api/quests/complete", uid, { questId: "1" });
+    await apiPost("/api/quests/complete", uid, { questId: "2" });
+    await apiPost("/api/quests/complete", otherUid, { questId: "3" });
+
+    const res = await apiGet("/api/quests/status", uid);
+    expect(res.body.completedToday.sort()).toEqual(["1", "2"]);
+  });
+});
