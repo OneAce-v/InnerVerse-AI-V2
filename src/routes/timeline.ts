@@ -5,6 +5,7 @@ import { db } from "../db/index.ts";
 import { profiles, foodLogs, exerciseLogs, journalEntries } from "../db/schema.ts";
 import { eq, and, sql } from "drizzle-orm";
 import { recalibrateDigitalTwin, updateDigitalTwinState } from "../db/digitalTwinService.ts";
+import { nonEmptyString } from "../lib/validation.ts";
 
 const router = express.Router();
 
@@ -60,9 +61,9 @@ router.post("/api/timeline/custom", requireAuth, async (req: AuthRequest, res) =
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    const { text } = req.body;
+    const text = nonEmptyString(req.body.text);
     if (!text) {
-      return res.status(400).json({ error: "Text is required" });
+      return res.status(400).json({ error: "text must be a non-empty string" });
     }
     
     const result = await db.insert(journalEntries).values({

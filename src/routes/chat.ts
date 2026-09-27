@@ -5,6 +5,7 @@ import { db } from "../db/index.ts";
 import { profiles } from "../db/schema.ts";
 import { eq, and } from "drizzle-orm";
 import { generateContentWithRetry } from "../lib/gemini.ts";
+import { nonEmptyString } from "../lib/validation.ts";
 
 const router = express.Router();
 
@@ -12,7 +13,11 @@ const router = express.Router();
 router.post("/api/agents/chat", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-    const { message, history } = req.body;
+    const message = nonEmptyString(req.body.message);
+    if (!message) return res.status(400).json({ error: "message must be a non-empty string" });
+    const history = Array.isArray(req.body.history)
+      ? req.body.history.filter((m: any) => m && typeof m.content === "string")
+      : [];
 
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
     const profileResult = await db.select().from(profiles).where(eq(profiles.userId, userResult.id));
@@ -43,7 +48,7 @@ Guidelines:
 - Maintain flow by acknowledging previous messages in the chat history.`;
 
     const prompt = `Conversation History:
-${history ? history.slice(-10).map((m: any) => `${m.role === 'user' ? 'User' : 'Coach Nova'}: ${m.content}`).join('\n') : ''}
+${history.slice(-10).map((m: any) => `${m.role === 'user' ? 'User' : 'Coach Nova'}: ${m.content}`).join('\n')}
 
 User's new message: "${message}"`;
 

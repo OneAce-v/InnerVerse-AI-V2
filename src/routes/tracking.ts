@@ -6,8 +6,11 @@ import { profiles, foodLogs, exerciseLogs } from "../db/schema.ts";
 import { eq, and, sql } from "drizzle-orm";
 import { recalibrateDigitalTwin, updateDigitalTwinState } from "../db/digitalTwinService.ts";
 import { generateContentWithRetry } from "../lib/gemini.ts";
+import { nonEmptyString } from "../lib/validation.ts";
 
 const router = express.Router();
+
+const VISION_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 // Tracking API
 router.post("/api/track/food", requireAuth, async (req: AuthRequest, res) => {
@@ -111,8 +114,11 @@ router.post("/api/track/food/vision", requireAuth, async (req: AuthRequest, res)
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
     const { imageBase64, mimeType } = req.body;
-    if (!imageBase64 || typeof imageBase64 !== "string") {
+    if (!nonEmptyString(imageBase64)) {
       return res.status(400).json({ error: "imageBase64 is required" });
+    }
+    if (mimeType !== undefined && !VISION_MIME_TYPES.has(mimeType)) {
+      return res.status(400).json({ error: "mimeType must be image/jpeg, image/png, or image/webp" });
     }
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
     const cleanBase64 = imageBase64.includes(",") ? imageBase64.split(",")[1] : imageBase64;
@@ -284,8 +290,9 @@ router.get("/api/track/exercise", requireAuth, async (req: AuthRequest, res) => 
 router.post("/api/track/unified", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
+    const prompt = nonEmptyString(req.body.prompt);
+    if (!prompt) return res.status(400).json({ error: "prompt must be a non-empty string" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    const { prompt } = req.body;
 
     const aiPrompt = `You are a health parsing engine. The user submitted this log: "${prompt}". 
 Extract any consumed food items (estimate calories, protein, carbs, fats) and any exercises performed (estimate durationMins, caloriesBurned).
@@ -296,15 +303,20 @@ Output STRICT JSON exactly matching this structure:
 }
 If there are no foods or exercises, return empty arrays.`;
 
-    const aiResponse = await generateContentWithRetry({
-      model: "gemini-2.5-flash",
-      contents: aiPrompt,
-      config: {
-        responseMimeType: "application/json"
-      }
-    });
-
-    const parsed = JSON.parse(aiResponse.text || '{"foods":[],"exercises":[]}');
+    let parsed: any;
+    try {
+      const aiResponse = await generateContentWithRetry({
+        model: "gemini-2.5-flash",
+        contents: aiPrompt,
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+      parsed = JSON.parse(aiResponse.text || '{"foods":[],"exercises":[]}');
+    } catch (e) {
+      console.error("[Magic Log] Gemini parsing failed:", e);
+      return res.status(502).json({ error: "AI parsing is temporarily unavailable. Please log food or exercise individually instead." });
+    }
     
     const insertedFoods = [];
     const insertedExercises = [];
@@ -341,8 +353,10 @@ If there are no foods or exercises, return empty arrays.`;
       }
     }
 
-    // Award XP for using Magic Log
-    await db.execute(sql`UPDATE profiles SET xp = xp + 10, coins = coins + 2 WHERE user_id = ${userResult.id}`);
+    // Rewarded only when something was actually logged, so a junk prompt can't farm XP.
+    if (insertedFoods.length > 0 || insertedExercises.length > 0) {
+      await db.execute(sql`UPDATE profiles SET xp = xp + 10, coins = coins + 2 WHERE user_id = ${userResult.id}`);
+    }
 
     // Holistic twin update after unified tracking
     recalibrateDigitalTwin(userResult.id).catch(err => console.error("Twin bg recalibrate fail", err));

@@ -5,6 +5,7 @@ import { db } from "../db/index.ts";
 import { users, collaborationShares, ragDocuments, biomarkers } from "../db/schema.ts";
 import { eq, and, desc } from "drizzle-orm";
 import { getAiAverageLatencyMs, aiMetrics } from "../lib/aiMetrics.ts";
+import { nonEmptyString, isOptionalString, positiveIntId } from "../lib/validation.ts";
 
 const router = express.Router();
 
@@ -95,8 +96,9 @@ router.post("/api/ecosystem/collaborators", requireAuth, async (req: AuthRequest
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    const { email, permissions } = req.body;
-    if (!email) return res.status(400).json({ error: "email is required" });
+    const email = nonEmptyString(req.body.email);
+    const { permissions } = req.body;
+    if (!email) return res.status(400).json({ error: "email must be a non-empty string" });
 
     const [collaboratorUser] = await db.select().from(users).where(eq(users.email, email));
     if (!collaboratorUser) {
@@ -123,8 +125,8 @@ router.post("/api/ecosystem/collaborators/:id/revoke", requireAuth, async (req: 
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    const shareId = Number(req.params.id);
-    if (!Number.isInteger(shareId)) return res.status(400).json({ error: "Invalid id" });
+    const shareId = positiveIntId(req.params.id);
+    if (shareId === null) return res.status(400).json({ error: "Invalid id" });
 
     const [share] = await db.update(collaborationShares)
       .set({ status: "revoked" })
@@ -142,9 +144,12 @@ router.post("/api/ecosystem/biomarkers", requireAuth, async (req: AuthRequest, r
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    const { markerName, value, unit } = req.body;
-    if (!markerName || value === undefined || !unit) {
-      return res.status(400).json({ error: "markerName, value, and unit are required" });
+    const markerName = nonEmptyString(req.body.markerName);
+    const unit = nonEmptyString(req.body.unit);
+    const { value } = req.body;
+    const validValue = (typeof value === "number" && Number.isFinite(value)) || nonEmptyString(value) !== null;
+    if (!markerName || !unit || !validValue) {
+      return res.status(400).json({ error: "markerName and unit must be non-empty strings, and value a number or non-empty string" });
     }
 
     const [marker] = await db.insert(biomarkers).values({
@@ -165,8 +170,12 @@ router.post("/api/ecosystem/knowledge", requireAuth, async (req: AuthRequest, re
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    const { title, documentType, content } = req.body;
-    if (!title) return res.status(400).json({ error: "title is required" });
+    const title = nonEmptyString(req.body.title);
+    const { documentType, content } = req.body;
+    if (!title) return res.status(400).json({ error: "title must be a non-empty string" });
+    if (!isOptionalString(documentType) || !isOptionalString(content)) {
+      return res.status(400).json({ error: "documentType and content must be strings" });
+    }
 
     const [doc] = await db.insert(ragDocuments).values({
       userId: userResult.id,

@@ -10,13 +10,54 @@ import { calculateLevel } from "../lib/serverHelpers.ts";
 
 const router = express.Router();
 
+// Inclusive bounds for the integer columns. Settings posts these straight from <input>
+// values, so numeric strings are accepted and "" (a cleared box) clears the field.
+const INTEGER_FIELDS: Record<string, [number, number]> = {
+  age: [1, 150],
+  height: [1, 300],
+  weight: [1, 700],
+  stressLevel: [1, 10],
+};
+const TEXT_FIELDS = [
+  "gender", "occupation", "sleepDuration", "primaryGoal", "fitnessLevel", "activityLevel",
+  "workoutExperience", "workoutLocation", "availableDays", "sessionDuration",
+  "preferredWorkoutTime", "sleepQuality", "dietType", "waterIntake", "mealFrequency",
+];
+const ARRAY_FIELDS = ["secondaryGoals", "availableEquipment", "exercisePreference", "healthRestrictions"];
+
+/** Coerces/validates the profile fields present in `body`; returns an error message on bad input. */
+function normalizeProfileInput(body: Record<string, any>): string | null {
+  for (const [field, [min, max]] of Object.entries(INTEGER_FIELDS)) {
+    const raw = body[field];
+    if (raw === undefined || raw === null) continue;
+    if (raw === "") { body[field] = null; continue; }
+    const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\s*\d+\s*$/.test(raw) ? Number(raw) : NaN;
+    if (!Number.isInteger(n) || n < min || n > max) return `${field} must be a whole number between ${min} and ${max}`;
+    body[field] = n;
+  }
+  for (const field of TEXT_FIELDS) {
+    const raw = body[field];
+    if (raw !== undefined && raw !== null && typeof raw !== "string") return `${field} must be a string`;
+  }
+  for (const field of ARRAY_FIELDS) {
+    const raw = body[field];
+    if (raw !== undefined && raw !== null && !Array.isArray(raw)) return `${field} must be an array`;
+  }
+  return null;
+}
+
 // User Profile Setup
 router.post("/api/profile", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-    const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    
+    if (typeof req.body !== "object" || Array.isArray(req.body)) {
+      return res.status(400).json({ error: "Request body must be a JSON object" });
+    }
     const pData = req.body;
+    const invalid = normalizeProfileInput(pData);
+    if (invalid) return res.status(400).json({ error: invalid });
+
+    const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
 
     // Optional: Generate Archetypes with Gemini if we are saving a full profile.
     // Left empty (not defaulted to nulls) when the goal/level/activity trio isn't present

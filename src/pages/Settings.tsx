@@ -108,6 +108,7 @@ export default function Settings() {
   });
 
   const [successMsg, setSuccessMsg] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [testResults, setTestResults] = useState<Record<string, any>>({});
   const [runningTests, setRunningTests] = useState<Record<string, boolean>>({});
 
@@ -173,10 +174,10 @@ export default function Settings() {
     }
   };
 
-  const saveProfileData = async (dataToSave: any) => {
+  const saveProfileData = async (dataToSave: any): Promise<boolean> => {
     try {
       const token = await getToken();
-      await fetch("/api/profile", {
+      const res = await fetch("/api/profile", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -184,17 +185,26 @@ export default function Settings() {
         },
         body: JSON.stringify(dataToSave),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setSaveError(`Not saved: ${data.error || "please try again"}`);
+        return false;
+      }
+      setSaveError("");
       setSuccessMsg("Settings Auto-saved.");
       setTimeout(() => setSuccessMsg(""), 3000);
+      return true;
     } catch (e) {
       console.error(e);
+      setSaveError("Not saved: network error");
+      return false;
     }
   };
 
   const handleSave = async () => {
     setLoading(true);
     try {
-      await saveProfileData(profile);
+      if (!(await saveProfileData(profile))) return;
 
       const token = await getToken();
       // Auto regenerate plans
@@ -2159,6 +2169,11 @@ export default function Settings() {
                   </motion.div>
                 )}
               </AnimatePresence>
+              {saveError && (
+                <span role="alert" className="text-xs font-semibold bg-destructive/15 text-destructive px-2 py-1 rounded-md">
+                  {saveError}
+                </span>
+              )}
               <Button
                 onClick={handleSave}
                 disabled={loading}

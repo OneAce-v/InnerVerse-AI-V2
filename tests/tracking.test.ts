@@ -115,7 +115,13 @@ describe("POST /api/track/unified", () => {
     const uid = await createTestUser("unified-unavailable");
     const res = await apiPost("/api/track/unified", uid, { prompt: "ate a chicken salad and ran 5k" });
     // No heuristic fallback exists for this route (unlike /api/track/food and
-    // /api/track/exercise), so with no working AI backend it must fail loudly.
-    expect(res.status).toBe(500);
+    // /api/track/exercise), so with no working AI backend it must fail loudly -
+    // as a 502 like the vision route, without leaking the upstream error.
+    expect(res.status).toBe(502);
+    expect(res.body.error).not.toMatch(/api key/i);
+
+    // Nothing was logged, so the Magic Log reward must not be granted either.
+    const profile = await apiGet("/api/profile", uid);
+    expect(profile.body.profile.xp).toBe(0);
   });
 });

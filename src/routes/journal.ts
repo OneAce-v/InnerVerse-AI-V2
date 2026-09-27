@@ -6,6 +6,7 @@ import { journalEntries, cognitiveMemory } from "../db/schema.ts";
 import { eq, and, sql } from "drizzle-orm";
 import { recalibrateDigitalTwin, updateDigitalTwinState } from "../db/digitalTwinService.ts";
 import { generateContentWithRetry } from "../lib/gemini.ts";
+import { nonEmptyString, toIsoDate } from "../lib/validation.ts";
 
 const router = express.Router();
 
@@ -13,8 +14,11 @@ const router = express.Router();
 router.post("/api/journal", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-    const { content, date: bodyDate } = req.body;
-    const date = bodyDate || new Date().toISOString().substring(0, 10);
+    const content = nonEmptyString(req.body.content);
+    if (!content) return res.status(400).json({ error: "content must be a non-empty string" });
+    const bodyDate = req.body.date;
+    const date = bodyDate === undefined || bodyDate === null ? new Date().toISOString().substring(0, 10) : toIsoDate(bodyDate);
+    if (!date) return res.status(400).json({ error: "date must be a valid YYYY-MM-DD date or ISO timestamp" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
 
     // Analyze entry with AI

@@ -33,6 +33,9 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // A base64 camera frame is routinely several hundred KB, far past express.json()'s
+  // 100kb default; registered first so this route's body is parsed with the higher limit.
+  app.use("/api/track/food/vision", express.json({ limit: "8mb" }));
   app.use(express.json());
 
   app.use((req, res, next) => {
@@ -109,6 +112,21 @@ async function startServer() {
   app.use(privacyRoutes);
   app.use(wearablesRoutes);
   app.use(developerRoutes);
+
+  // Without this, an unknown /api path falls through to the SPA handler below and
+  // answers with index.html and a 200, which then breaks the caller's res.json().
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ error: "Not found" });
+  });
+
+  // Body-parser failures (malformed JSON, oversized payloads) otherwise get Express's
+  // default HTML error page, which includes a stack trace outside production.
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const status = Number.isInteger(err?.status) && err.status >= 400 && err.status < 600 ? err.status : 500;
+    if (status >= 500) console.error(err);
+    const error = status === 413 ? "Request body too large" : status < 500 ? "Malformed request body" : "Internal server error";
+    res.status(status).json({ error });
+  });
 
   // --- Vite Middleware for Development ---
   if (process.env.NODE_ENV !== "production") {

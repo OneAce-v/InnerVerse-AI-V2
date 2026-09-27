@@ -7,6 +7,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { getDigitalTwin } from "../db/digitalTwinService.ts";
 import { runSupervisor } from "../agents/supervisor.ts";
 import { generateContentWithRetry } from "../lib/gemini.ts";
+import { nonEmptyString } from "../lib/validation.ts";
 
 const router = express.Router();
 
@@ -175,7 +176,8 @@ router.get("/api/briefings", requireAuth, async (req: AuthRequest, res) => {
 router.post("/api/simulation", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-    const { query } = req.body;
+    const query = nonEmptyString(req.body.query);
+    if (!query) return res.status(400).json({ error: "query must be a non-empty string" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
     const digitalTwin = await getDigitalTwin(userResult.id);
 
@@ -246,9 +248,10 @@ router.get("/api/recommendations", requireAuth, async (req: AuthRequest, res) =>
 router.post("/api/omnibar", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-    const { query } = req.body;
+    const query = nonEmptyString(req.body.query);
+    if (!query) return res.status(400).json({ error: "query must be a non-empty string" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    
+
     const profileResult = await db.select().from(profiles).where(eq(profiles.userId, userResult.id));
     const userProfile: any = profileResult[0] || {};
     

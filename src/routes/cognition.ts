@@ -5,6 +5,7 @@ import { db } from "../db/index.ts";
 import { cognitiveMemory, researchExperiments } from "../db/schema.ts";
 import { eq, and, desc } from "drizzle-orm";
 import { getDigitalTwin, getDigitalTwinHistory } from "../db/digitalTwinService.ts";
+import { nonEmptyString, isOptionalString } from "../lib/validation.ts";
 import { timeAgo } from "../lib/serverHelpers.ts";
 
 const router = express.Router();
@@ -92,8 +93,10 @@ router.post("/api/cognition/experiments", requireAuth, async (req: AuthRequest, 
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    const { hypothesis, experimentType } = req.body;
-    if (!hypothesis) return res.status(400).json({ error: "hypothesis is required" });
+    const hypothesis = nonEmptyString(req.body.hypothesis);
+    const { experimentType } = req.body;
+    if (!hypothesis) return res.status(400).json({ error: "hypothesis must be a non-empty string" });
+    if (!isOptionalString(experimentType)) return res.status(400).json({ error: "experimentType must be a string" });
 
     const [experiment] = await db.insert(researchExperiments).values({
       userId: userResult.id,
