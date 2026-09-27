@@ -57,22 +57,23 @@ router.post("/api/subscription", requireAuth, async (req: AuthRequest, res) => {
       set: subValues
     }).returning();
 
-    // Record payment log
+    // Demo billing: there is no payment processor, so no charge happens and no invoice
+    // exists. The record is kept (as status "demo") so the payment-history view has data.
     const amount = PLAN_PRICES_CENTS.get(plan)!;
     if (amount > 0) {
       await db.insert(payments).values({
         userId: userResult.id,
         amount,
         currency: 'USD',
-        status: 'succeeded',
-        invoiceUrl: `https://invoices.innerverse.ai/inv_${Date.now()}`
+        status: 'demo',
+        invoiceUrl: null
       });
     }
 
     await db.insert(notifications).values({
       userId: userResult.id,
       title: "Subscription Updated",
-      message: `Your plan is now ${updated.plan} (${updated.billingCycle} billing).`,
+      message: `Your plan is now ${updated.plan} (${updated.billingCycle} billing, demo mode - no payment was taken).`,
       type: "info"
     });
 

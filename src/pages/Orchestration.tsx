@@ -31,6 +31,7 @@ export default function Orchestration() {
   const [decisionQuery, setDecisionQuery] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [decisionResult, setDecisionResult] = useState<any>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -90,6 +91,7 @@ export default function Orchestration() {
     e.preventDefault();
     if (!decisionQuery.trim()) return;
     setAnalyzing(true);
+    setDecisionError(null);
     try {
       const token = await getToken();
       const res = await fetch("/api/orchestration/decision", {
@@ -97,10 +99,16 @@ export default function Orchestration() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ query: decisionQuery })
       });
-      const data = await res.json();
-      if (data.decision) setDecisionResult(data.decision);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.decision) {
+        setDecisionResult(data.decision);
+      } else {
+        setDecisionResult(null);
+        setDecisionError(data.error || "Analysis failed. Please try again.");
+      }
     } catch (e) {
       console.error(e);
+      setDecisionError("Network error while analyzing the decision.");
     } finally {
       setAnalyzing(false);
     }
@@ -259,6 +267,11 @@ export default function Orchestration() {
                  </form>
 
                  <AnimatePresence>
+                 {decisionError && (
+                   <p role="alert" className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+                     {decisionError}
+                   </p>
+                 )}
                  {decisionResult && (
                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-muted/20 border border-border rounded-xl p-4">
                       <h4 className="font-bold flex items-center gap-2 mb-4"><ShieldAlert className="w-4 h-4 text-amber-500" /> Strategic Analysis</h4>

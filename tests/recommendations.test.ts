@@ -51,14 +51,16 @@ describe("GET /api/briefings", () => {
 });
 
 describe("POST /api/simulation", () => {
-  it("returns a structured simulation result even without a real Gemini key", async () => {
+  // The test suite runs with a placeholder Gemini key. Without real AI there is no
+  // honest prediction to return, so the route must fail clearly rather than hand back
+  // a canned score and confidence that look like a real forecast.
+  it("refuses to invent a prediction when the AI is unavailable", async () => {
     const uid = await createTestUser("simulation");
     const res = await apiPost("/api/simulation", uid, { query: "What happens if I sleep 8 hours every night?" });
 
-    expect(res.status).toBe(200);
-    expect(res.body.simulation).toBeDefined();
-    expect(typeof res.body.simulation.hdi).toBe("string");
-    expect(typeof res.body.simulation.explanation).toBe("string");
+    expect(res.status).toBe(502);
+    expect(res.body.simulation).toBeUndefined();
+    expect(res.body.error).toMatch(/unavailable/i);
   }, 15000);
 });
 

@@ -30,6 +30,23 @@ export function timeAgo(date: Date | string | null | undefined): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+/**
+ * Consecutive days with any logged activity, counting back from today (UTC). A streak
+ * is still alive if the last activity was yesterday - today just hasn't been logged yet.
+ */
+export function computeStreak(activeDays: Iterable<string>, now: Date = new Date()): number {
+  const days = new Set(activeDays);
+  const cursor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const key = () => cursor.toISOString().slice(0, 10);
+  if (!days.has(key())) cursor.setUTCDate(cursor.getUTCDate() - 1);
+  let streak = 0;
+  while (days.has(key())) {
+    streak++;
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
+  return streak;
+}
+
 export function calculateLevel(xp: number): number {
   if (xp >= 10000) return 10;
   if (xp >= 7500) return 9;

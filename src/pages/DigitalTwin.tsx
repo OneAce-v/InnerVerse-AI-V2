@@ -117,11 +117,13 @@ export default function DigitalTwin() {
   const [simQuery, setSimQuery] = useState("");
   const [simulating, setSimulating] = useState(false);
   const [simResult, setSimResult] = useState<any>(null);
+  const [simError, setSimError] = useState<string | null>(null);
 
   const handleSimulate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!simQuery.trim()) return;
     setSimulating(true);
+    setSimError(null);
     try {
       const token = await getToken();
       const res = await fetch("/api/simulation", {
@@ -129,12 +131,16 @@ export default function DigitalTwin() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ query: simQuery })
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const data = await res.json();
         setSimResult(data.simulation);
+      } else {
+        setSimResult(null);
+        setSimError(data.error || "Simulation failed. Please try again.");
       }
     } catch (err) {
       console.error(err);
+      setSimError("Network error while running the simulation.");
     } finally {
       setSimulating(false);
     }
@@ -1219,6 +1225,11 @@ export default function DigitalTwin() {
                       </Button>
                     </form>
                     
+                    {simError && (
+                      <p role="alert" className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+                        {simError}
+                      </p>
+                    )}
                     {simResult && (
                       <div className="p-4 bg-muted/20 border border-border/80 rounded-xl space-y-4">
                         <h4 className="font-bold flex items-center gap-2 text-primary">

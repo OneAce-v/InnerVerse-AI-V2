@@ -36,7 +36,6 @@ import {
   Bell,
   Gamepad2,
   Accessibility,
-  BarChart,
   Network,
   Save,
   Search,
@@ -71,7 +70,6 @@ const categories = [
   { id: "notifications", name: "Notification Settings", icon: Bell },
   { id: "gamification", name: "Gamification Settings", icon: Gamepad2 },
   { id: "accessibility", name: "Accessibility", icon: Accessibility },
-  { id: "analytics", name: "Advanced Analytics", icon: BarChart },
   { id: "twin", name: "Digital Twin Settings", icon: Network },
   { id: "diagnostics", name: "Interactive Feature Test Suite", icon: Shield },
 ];
@@ -98,14 +96,14 @@ export default function Settings() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Local settings state
-  const [settings, setSettings] = useState<any>({
+  // Stored on the profile (profile.preferences), so the profile autosave persists them.
+  const settings = {
     coachName: "Coach Nova",
     coachPersonality: "Motivational",
-    coachStyle: "Detailed Explanations",
+    coachStyle: "Short Responses",
     gamificationEnabled: true,
-    notificationsEnabled: true,
-  });
+    ...(profile?.preferences || {}),
+  };
 
   const [successMsg, setSuccessMsg] = useState("");
   const [saveError, setSaveError] = useState("");
@@ -148,16 +146,6 @@ export default function Settings() {
 
     return () => clearTimeout(handler);
   }, [profile]);
-
-  // Save settings automatically as well
-  useEffect(() => {
-    if (Object.keys(settings).length === 0) return;
-    const handler = setTimeout(() => {
-      // Intentionally not showing a flash message for purely local state UI toggles
-      // to avoid annoying the user. Just saving silently if it were hooked to an API.
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [settings]);
 
   const fetchProfile = async () => {
     try {
@@ -229,7 +217,16 @@ export default function Settings() {
   };
 
   const handleSettingChange = (field: string, val: any) => {
-    setSettings((prev: any) => ({ ...prev, [field]: val }));
+    setProfile((prev: any) => (prev ? { ...prev, preferences: { ...(prev.preferences || {}), [field]: val } } : prev));
+  };
+
+  const toggleRestriction = (item: string, on: boolean) => {
+    setProfile((prev: any) => {
+      if (!prev) return prev;
+      const current: string[] = (prev.healthRestrictions || []).filter((r: string) => r !== "None");
+      const next = on ? [...new Set([...current, item])] : current.filter((r) => r !== item);
+      return { ...prev, healthRestrictions: next.length ? next : ["None"] };
+    });
   };
 
   const filteredCategories = categories.filter((c) =>
@@ -742,44 +739,12 @@ export default function Settings() {
                   />
                 </div>
               </CardHeader>
-              <CardContent
-                className={`space-y-6 ${!settings.gamificationEnabled ? "opacity-50 pointer-events-none" : ""}`}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="text-base font-bold">
-                      XP System & Leveling
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      Gain experience points for completing healthy actions.
-                    </p>
-                  </div>
-                  <Switch checked={true} />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="text-base font-bold">
-                      Streak Tracking
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      Maintain daily streaks for bonus multipliers.
-                    </p>
-                  </div>
-                  <Switch checked={true} />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="text-base font-bold">
-                      Boss Battles & Challenges
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      Face weekly AI-generated boss challenges.
-                    </p>
-                  </div>
-                  <Switch checked={true} />
-                </div>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  {settings.gamificationEnabled
+                    ? "On: your Dashboard shows Daily Quests, which award XP and coins you can spend in the rewards store. Your streak counts consecutive days with any logged activity."
+                    : "Off: Daily Quests are hidden from your Dashboard. Your XP, coins, and logged data are kept."}
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -1165,13 +1130,15 @@ export default function Settings() {
                 ].map((a) => (
                   <div key={a} className="flex items-center justify-between">
                     <Label className="text-sm font-medium">{a}</Label>
-                    <Switch checked={false} />
+                    <Switch
+                      checked={(profile?.healthRestrictions || []).includes(a)}
+                      onCheckedChange={(c) => toggleRestriction(a, c)}
+                    />
                   </div>
                 ))}
-                <div className="space-y-2 mt-4 pt-4 border-t border-border">
-                  <Label>Custom Restrictions</Label>
-                  <Input placeholder="e.g. No mushrooms, allergic to kiwi..." />
-                </div>
+                <p className="text-xs text-muted-foreground pt-2">
+                  Saved to your health restrictions, which the AI specialists read when generating your recommendations.
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -1290,80 +1257,13 @@ export default function Settings() {
                   Configuration
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center justify-between pb-4 border-b border-border">
-                  <div>
-                    <Label className="text-base font-bold">
-                      Master Notification Switch
-                    </Label>
-                  </div>
-                  <Switch
-                    checked={settings.notificationsEnabled}
-                    onCheckedChange={(c) =>
-                      handleSettingChange("notificationsEnabled", c)
-                    }
-                  />
-                </div>
-
-                <div
-                  className={`space-y-6 ${!settings.notificationsEnabled ? "opacity-50 pointer-events-none" : ""}`}
-                >
-                  {[
-                    {
-                      id: "n1",
-                      label: "Workout Reminders",
-                      desc: "Alerts before scheduled sessions",
-                    },
-                    {
-                      id: "n2",
-                      label: "Meal Reminders",
-                      desc: "Timing alerts for optimal metabolism",
-                    },
-                    {
-                      id: "n3",
-                      label: "Hydration Reminders",
-                      desc: "Periodic water intake nudges",
-                    },
-                    {
-                      id: "n4",
-                      label: "Meditation Reminders",
-                      desc: "Daily zen moments",
-                    },
-                    {
-                      id: "n5",
-                      label: "Sleep Reminders",
-                      desc: "Wind-down alerts 1hr before bed",
-                    },
-                    {
-                      id: "n6",
-                      label: "Goal Achievement Alerts",
-                      desc: "Celebrate your wins immediately",
-                    },
-                    {
-                      id: "n7",
-                      label: "AI Insights Notifications",
-                      desc: "Smart analysis and plan updates",
-                    },
-                    {
-                      id: "n8",
-                      label: "Streak Notifications",
-                      desc: "Warning when streaks are at risk",
-                    },
-                  ].map((n) => (
-                    <div
-                      key={n.id}
-                      className="flex items-center justify-between"
-                    >
-                      <div>
-                        <Label className="text-sm font-bold">{n.label}</Label>
-                        <p className="text-xs text-muted-foreground">
-                          {n.desc}
-                        </p>
-                      </div>
-                      <Switch checked={true} />
-                    </div>
-                  ))}
-                </div>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  InnerVerse shows in-app notifications when your Digital Twin is recalibrated and when your subscription changes. You can read and dismiss them under <span className="font-semibold text-foreground">Ambient AI → Notifications</span>.
+                </p>
+                <p>
+                  Scheduled reminders (workouts, meals, sleep) and push or email alerts are not implemented yet, so there is nothing to configure here.
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -1422,7 +1322,7 @@ export default function Settings() {
                       Screen Reader Optimization
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      Enhanced ARIA labeling
+                      Enhanced ARIA labeling (not available yet)
                     </p>
                   </div>
                   <Switch checked={false} />
@@ -1432,60 +1332,11 @@ export default function Settings() {
                   <div>
                     <Label className="font-bold">Dyslexia-Friendly Font</Label>
                     <p className="text-xs text-muted-foreground">
-                      Switch to OpenDyslexic typeface
+                      Switch to OpenDyslexic typeface (not available yet)
                     </p>
                   </div>
                   <Switch checked={false} />
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        );
-
-      case "analytics":
-        return (
-          <div className="space-y-6">
-            <Card className="border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BarChart className="w-5 h-5 text-purple-500" /> Dashboard
-                  Widgets
-                </CardTitle>
-                <CardDescription>
-                  Select which data panels appear on your home screen.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {[
-                  { id: "w1", label: "Fitness Analytics", checked: true },
-                  { id: "w2", label: "Sleep Analytics", checked: true },
-                  { id: "w3", label: "Nutrition Analytics", checked: true },
-                  { id: "w4", label: "Mood Analytics", checked: false },
-                  { id: "w5", label: "Recovery Analytics", checked: true },
-                  { id: "w6", label: "AI Predictions", checked: true },
-                ].map((w, i) => (
-                  <div
-                    key={w.id}
-                    className="flex items-center justify-between p-3 bg-muted rounded-lg border border-border"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-6 h-6 rounded bg-card flex items-center justify-center text-xs text-muted-foreground font-mono">
-                        {i + 1}
-                      </div>
-                      <Label className="font-bold">{w.label}</Label>
-                    </div>
-                    <div className="flex flex-col gap-1 items-end">
-                      <span className="text-[10px] uppercase text-muted-foreground">
-                        Visible
-                      </span>
-                      <Switch checked={w.checked} />
-                    </div>
-                  </div>
-                ))}
-                <p className="text-xs text-muted-foreground mt-4 italic">
-                  Drag and drop functionality to rearrange widgets can be
-                  accessed directly from the Dashboard layout editor.
-                </p>
               </CardContent>
             </Card>
           </div>

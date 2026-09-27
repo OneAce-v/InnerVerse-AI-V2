@@ -142,12 +142,8 @@ Return a JSON object with this structure:
 "recommendation": "..."
 }`;
 
-    let decisionResult = {
-      optionA: { title: "Accept", pros: ["Career Growth"], cons: ["Sleep Debt"] },
-      optionB: { title: "Decline", pros: ["Stable Health"], cons: ["Missed promotion"] },
-      recommendation: "Maintain balance."
-    };
-    
+    // No canned fallback: the same fixed Accept/Decline answer for every question would be fabricated analysis.
+    let decisionResult: any;
     try {
       const response = await generateContentWithRetry({
         model: "gemini-2.5-flash",
@@ -156,7 +152,8 @@ Return a JSON object with this structure:
       });
       decisionResult = JSON.parse(response.text || "{}");
     } catch (e) {
-      console.warn("Decision gemini error fallback:", e);
+      console.warn("[Decision] Gemini unavailable:", e);
+      return res.status(502).json({ error: "The AI decision engine is unavailable right now, so no analysis was made. Please try again later." });
     }
 
     res.json({ decision: decisionResult });

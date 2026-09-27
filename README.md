@@ -42,7 +42,8 @@ and `src/lib/firebase-admin.ts`.
 npm run db:push
 ```
 
-Applies `src/db/schema.ts` to the Postgres database defined in your env vars.
+Applies `src/db/schema.ts` to the Postgres database defined in your env vars. Re-run it
+after pulling schema changes (for example, the `profiles.preferences` column).
 
 ### 4. Run the dev server
 
@@ -110,6 +111,17 @@ src/
 
 ## Known gaps
 
-Test coverage is intentionally narrow so far — it targets the server-authoritative
-logic most worth protecting (quest reward idempotency, atomic store purchases, the
-notifications IDOR fix, the journal date fallback) rather than every route.
+- **AI features need a real `GEMINI_API_KEY`.** Without one, chat, journal mood
+  analysis, recommendations, and Digital Twin recalibration fall back to rule-based
+  heuristics (chat tells the user it is offline; the twin records
+  `rule-engine-fallback` in its metadata). The what-if simulation, decision engine,
+  Magic Log, and camera food scanner return an "unavailable" error instead of
+  invented results.
+- **Billing is a demo.** No payment provider is connected; choosing a plan records a
+  simulated payment (status `demo`) and does not gate any features.
+- **No reminders or push notifications.** Only in-app notifications exist (twin
+  recalibration, subscription changes).
+- **No pose estimation.** Motion tracking is a manual logging form.
+
+The test suite (`tests/`) covers every API route, including a 401 check on all
+protected routes and edge-case input validation (`tests/edge-cases.test.ts`).
