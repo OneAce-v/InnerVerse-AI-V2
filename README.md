@@ -54,6 +54,24 @@ npm run dev
 Starts an Express server (port `3000`) that also runs Vite in middleware mode, so
 the frontend and API are served from one process during development.
 
+### 5. (Optional) Load demo data
+
+A brand-new account has no history, so trends, streaks and the Cognition page look
+empty. To fill an account with three weeks of realistic activity:
+
+1. Sign in to the app once with the Google account you'll demo with.
+2. Run:
+
+```bash
+npm run seed:demo -- you@gmail.com            # add --reset to replace existing activity
+```
+
+The seeded meals, workouts, and journal entries are synthetic (logs are marked
+`source = "demo-seed"`), but every Digital Twin state and snapshot is computed by the
+app's own recalibration engine, replayed day by day over only the data that existed on
+that day. Options: `--days <n>` (default 21) and `--use-ai` (recalibrate with Gemini
+instead of the offline rule engine; slower and uses quota).
+
 ## Scripts
 
 | Script | What it does |
@@ -64,6 +82,7 @@ the frontend and API are served from one process during development.
 | `npm run preview` | Preview the built frontend via `vite preview` (frontend only, no API) |
 | `npm run lint` | Type-check the whole project (`tsc --noEmit`) — there is no separate linter configured yet |
 | `npm run db:push` | Push the Drizzle schema to Postgres |
+| `npm run seed:demo -- <email>` | Fill a signed-in account with demo history (see step 5 above) |
 | `npm test` | Run the integration test suite against a real Postgres database (see below) |
 | `npm run clean` | Remove build output |
 
