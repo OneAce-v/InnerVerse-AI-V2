@@ -3,7 +3,8 @@ import { requireAuth, AuthRequest } from "../middleware/auth.ts";
 import { getOrCreateUser } from "../db/users.ts";
 import { db } from "../db/index.ts";
 import { notifications, goals } from "../db/schema.ts";
-import { getDigitalTwin, recalibrateDigitalTwin, updateDigitalTwinState, getDigitalTwinHistory, getDigitalTwinDependencies, getDigitalTwinContributors, getDigitalTwinGoals, getDigitalTwinConfidence } from "../db/digitalTwinService.ts";
+import { getDigitalTwin, recalibrateDigitalTwin, updateDigitalTwinState, getDigitalTwinHistory, getDigitalTwinDependencies, getDigitalTwinContributors, getDigitalTwinGoals, getDigitalTwinConfidence, DEPENDENCY_MODEL } from "../db/digitalTwinService.ts";
+import { isOptionalString } from "../lib/validation.ts";
 
 const router = express.Router();
 
@@ -48,12 +49,22 @@ router.post("/api/digital-twin/update", requireAuth, async (req: AuthRequest, re
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
     const { stateName, score, trend, confidence, supportingEvidence, aiSummary } = req.body;
-    
-    if (!stateName) {
-      return res.status(400).json({ error: "stateName is required" });
+
+    if (typeof stateName !== "string" || !Object.hasOwn(DEPENDENCY_MODEL, stateName)) {
+      return res.status(400).json({ error: `stateName must be one of: ${Object.keys(DEPENDENCY_MODEL).join(", ")}` });
+    }
+    const isOptionalNumber = (v: unknown) => v === undefined || (typeof v === "number" && Number.isFinite(v));
+    if (!isOptionalNumber(score) || !isOptionalNumber(confidence)) {
+      return res.status(400).json({ error: "score and confidence must be numbers" });
+    }
+    if (trend !== undefined && trend !== "up" && trend !== "down" && trend !== "stable") {
+      return res.status(400).json({ error: 'trend must be "up", "down", or "stable"' });
+    }
+    if (!isOptionalString(supportingEvidence) || !isOptionalString(aiSummary)) {
+      return res.status(400).json({ error: "supportingEvidence and aiSummary must be strings" });
     }
     
-    const twin = await updateDigitalTwinState(userResult.id, stateName, {
+    const twin = await updateDigitalTwinState(userResult.id, stateName as Parameters<typeof updateDigitalTwinState>[1], {
       score,
       trend,
       confidence,

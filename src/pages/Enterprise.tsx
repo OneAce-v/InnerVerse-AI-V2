@@ -155,6 +155,12 @@ export default function Enterprise() {
       <AnimatePresence mode="wait">
         {activeTab === "billing" ? (
           <motion.div key="billing" variants={tabPanel} initial="hidden" animate="visible" exit="exit" className="space-y-6">
+            <div role="note" className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-sm">
+              <p className="font-bold text-amber-600 dark:text-amber-400">Demo billing</p>
+              <p className="text-muted-foreground mt-1">
+                No payment provider is connected. Choosing a plan records a simulated payment - no card is charged, no real invoice is issued, and every feature is available on every plan.
+              </p>
+            </div>
             <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-3 gap-6">
                <motion.div variants={staggerItem}>
                <Card className={`border-2 h-full ${subscription?.plan === 'Free' ? 'border-primary' : 'border-border'}`}>
@@ -222,11 +228,11 @@ export default function Enterprise() {
 
             <Card className="border-border">
                <CardHeader>
-                  <CardTitle className="text-lg">Recent Invoices & Payment History</CardTitle>
+                  <CardTitle className="text-lg">Simulated Payment History</CardTitle>
                </CardHeader>
                <CardContent className="space-y-3">
                   {(!billingInfo?.invoices || billingInfo.invoices.length === 0) ? (
-                    <EmptyState icon={CreditCard} title="No invoices yet" description="Payment history will appear here after your first paid plan charge." />
+                    <EmptyState icon={CreditCard} title="No payments yet" description="Simulated payments appear here when you choose a paid plan." />
                   ) : (
                   billingInfo?.invoices?.map((inv: any) => (
                      <div key={inv.id} className="p-3 bg-card border border-border rounded-lg flex justify-between items-center">
@@ -234,7 +240,7 @@ export default function Enterprise() {
                            <p className="font-bold text-sm">${(inv.amount / 100).toFixed(2)} {inv.currency}</p>
                            <p className="text-xs text-muted-foreground">{new Date(inv.createdAt).toLocaleDateString()}</p>
                         </div>
-                        <Badge className="bg-green-500/10 text-green-500 border-green-500/20">{inv.status.toUpperCase()}</Badge>
+                        <Badge variant="outline">{inv.status === "demo" ? "DEMO - NOT CHARGED" : String(inv.status).toUpperCase()}</Badge>
                      </div>
                   ))
                   )}

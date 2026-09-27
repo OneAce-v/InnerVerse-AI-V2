@@ -6,6 +6,7 @@ import { profiles, users, lifeMissions, goals, orchestrationTasks } from "../db/
 import { eq, and, desc } from "drizzle-orm";
 import { getDigitalTwin } from "../db/digitalTwinService.ts";
 import { generateContentWithRetry } from "../lib/gemini.ts";
+import { nonEmptyString, isOptionalString, positiveIntId } from "../lib/validation.ts";
 
 const router = express.Router();
 
@@ -84,8 +85,10 @@ router.post("/api/orchestration/missions", requireAuth, async (req: AuthRequest,
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    const { title, vision } = req.body;
-    if (!title) return res.status(400).json({ error: "title is required" });
+    const title = nonEmptyString(req.body.title);
+    const { vision } = req.body;
+    if (!title) return res.status(400).json({ error: "title must be a non-empty string" });
+    if (!isOptionalString(vision)) return res.status(400).json({ error: "vision must be a string" });
 
     const [mission] = await db.insert(lifeMissions).values({
       userId: userResult.id,
@@ -104,8 +107,8 @@ router.post("/api/orchestration/tasks/:id/complete", requireAuth, async (req: Au
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    const taskId = Number(req.params.id);
-    if (!Number.isInteger(taskId)) return res.status(400).json({ error: "Invalid task id" });
+    const taskId = positiveIntId(req.params.id);
+    if (taskId === null) return res.status(400).json({ error: "Invalid task id" });
 
     const [task] = await db.update(orchestrationTasks)
       .set({ status: "done", updatedAt: new Date() })
@@ -122,9 +125,10 @@ router.post("/api/orchestration/tasks/:id/complete", requireAuth, async (req: Au
 router.post("/api/orchestration/decision", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-    const { query } = req.body;
+    const query = nonEmptyString(req.body.query);
+    if (!query) return res.status(400).json({ error: "query must be a non-empty string" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    
+
     const prompt = `You are the InnerVerse Supervisor AI (Decision Intelligence Engine).
 The user is facing a strategic decision: "${query}".
 
@@ -138,12 +142,8 @@ Return a JSON object with this structure:
 "recommendation": "..."
 }`;
 
-    let decisionResult = {
-      optionA: { title: "Accept", pros: ["Career Growth"], cons: ["Sleep Debt"] },
-      optionB: { title: "Decline", pros: ["Stable Health"], cons: ["Missed promotion"] },
-      recommendation: "Maintain balance."
-    };
-    
+    // No canned fallback: the same fixed Accept/Decline answer for every question would be fabricated analysis.
+    let decisionResult: any;
     try {
       const response = await generateContentWithRetry({
         model: "gemini-2.5-flash",
@@ -152,7 +152,8 @@ Return a JSON object with this structure:
       });
       decisionResult = JSON.parse(response.text || "{}");
     } catch (e) {
-      console.warn("Decision gemini error fallback:", e);
+      console.warn("[Decision] Gemini unavailable:", e);
+      return res.status(502).json({ error: "The AI decision engine is unavailable right now, so no analysis was made. Please try again later." });
     }
 
     res.json({ decision: decisionResult });

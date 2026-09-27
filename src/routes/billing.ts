@@ -7,6 +7,9 @@ import { eq, sql } from "drizzle-orm";
 
 const router = express.Router();
 
+const PLAN_PRICES_CENTS = new Map<unknown, number>([["Free", 0], ["Premium", 1200], ["Pro", 2900], ["Enterprise", 9900]]);
+const BILLING_CYCLES = new Set<unknown>(["monthly", "yearly"]);
+
 // --- Phase 9: Enterprise Infrastructure & SaaS Endpoints ---
 
 router.get("/api/subscription", requireAuth, async (req: AuthRequest, res) => {
@@ -33,13 +36,19 @@ router.get("/api/subscription", requireAuth, async (req: AuthRequest, res) => {
 router.post("/api/subscription", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-    const { plan, billingCycle } = req.body;
+    const { plan, billingCycle = "monthly" } = req.body;
+    if (!PLAN_PRICES_CENTS.has(plan)) {
+      return res.status(400).json({ error: `plan must be one of: ${[...PLAN_PRICES_CENTS.keys()].join(", ")}` });
+    }
+    if (!BILLING_CYCLES.has(billingCycle)) {
+      return res.status(400).json({ error: `billingCycle must be one of: ${[...BILLING_CYCLES].join(", ")}` });
+    }
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
 
     const subValues = {
       userId: userResult.id,
-      plan: plan || 'Pro',
-      billingCycle: billingCycle || 'monthly',
+      plan,
+      billingCycle,
       status: 'active',
       updatedAt: new Date()
     };
@@ -48,26 +57,27 @@ router.post("/api/subscription", requireAuth, async (req: AuthRequest, res) => {
       set: subValues
     }).returning();
 
-    // Record payment log
-    const amount = plan === 'Enterprise' ? 9900 : plan === 'Pro' ? 2900 : plan === 'Premium' ? 1200 : 0;
+    // Demo billing: there is no payment processor, so no charge happens and no invoice
+    // exists. The record is kept (as status "demo") so the payment-history view has data.
+    const amount = PLAN_PRICES_CENTS.get(plan)!;
     if (amount > 0) {
       await db.insert(payments).values({
         userId: userResult.id,
         amount,
         currency: 'USD',
-        status: 'succeeded',
-        invoiceUrl: `https://invoices.innerverse.ai/inv_${Date.now()}`
+        status: 'demo',
+        invoiceUrl: null
       });
     }
 
     await db.insert(notifications).values({
       userId: userResult.id,
       title: "Subscription Updated",
-      message: `Your plan is now ${updated?.plan || plan || 'Pro'} (${updated?.billingCycle || billingCycle || 'monthly'} billing).`,
+      message: `Your plan is now ${updated.plan} (${updated.billingCycle} billing, demo mode - no payment was taken).`,
       type: "info"
     });
 
-    res.json({ success: true, plan, billingCycle });
+    res.json({ success: true, plan: updated.plan, billingCycle: updated.billingCycle });
   } catch (error: any) {
     console.error(error);
     res.status(500).json({ error: error.message });

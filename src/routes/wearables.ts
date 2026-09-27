@@ -7,6 +7,8 @@ import { eq, and, sql } from "drizzle-orm";
 
 const router = express.Router();
 
+const SUPPORTED_PROVIDERS = new Set(["fitbit", "oura", "garmin", "google_fit", "whoop"]);
+
 // Wearable connections: persisted, real toggle state (no fabricated OAuth ceremony or
 // permanently-"connected" badges). Apple Health has no browser API, so it is honestly
 // reported as unavailable rather than shown as connected.
@@ -28,6 +30,9 @@ router.post("/api/wearables/:provider/toggle", requireAuth, async (req: AuthRequ
     const provider = req.params.provider;
     if (provider === "apple_health") {
       return res.status(400).json({ error: "Apple Health requires a native iOS app with HealthKit access; it cannot be connected from a browser." });
+    }
+    if (!SUPPORTED_PROVIDERS.has(provider)) {
+      return res.status(400).json({ error: `Unsupported provider. Supported: ${[...SUPPORTED_PROVIDERS].join(", ")}` });
     }
 
     const [existing] = await db.select().from(wearableConnections).where(and(eq(wearableConnections.userId, userResult.id), eq(wearableConnections.provider, provider)));

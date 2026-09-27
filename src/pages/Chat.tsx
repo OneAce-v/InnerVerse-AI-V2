@@ -28,16 +28,23 @@ export default function Chat() {
   const [loading, setLoading] = useState(false);
   const [ownsVoice, setOwnsVoice] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [coachName, setCoachName] = useState("Coach Nova");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     (async () => {
       try {
         const token = await getToken();
-        const res = await fetch("/api/store", { headers: { Authorization: `Bearer ${token}` } });
-        const data = await res.json();
+        const headers = { Authorization: `Bearer ${token}` };
+        const [storeRes, profileRes] = await Promise.all([
+          fetch("/api/store", { headers }),
+          fetch("/api/profile", { headers }),
+        ]);
+        const data = await storeRes.json();
         const voiceItem = data.items?.find((i: any) => i.id === "nova_voice");
         setOwnsVoice(!!voiceItem?.owned);
+        const { profile } = await profileRes.json();
+        if (profile?.preferences?.coachName) setCoachName(profile.preferences.coachName);
       } catch (e) {
         console.error(e);
       }
@@ -116,14 +123,14 @@ export default function Chat() {
                 <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-primary bg-background flex items-center justify-center shadow-md">
                   <img
                     src="https://api.dicebear.com/7.x/bottts/svg?seed=coach-nova&backgroundColor=c0aede"
-                    alt="Coach Nova"
+                    alt={coachName}
                     className="w-full h-full object-cover scale-110"
                   />
                 </div>
                 <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-card"></div>
               </div>
               <div>
-                <h2 className="text-xl font-bold">Coach Nova</h2>
+                <h2 className="text-xl font-bold">{coachName}</h2>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
                   Level 99 AI Mentor
                 </p>
@@ -134,7 +141,7 @@ export default function Chat() {
                 type="button"
                 variant="outline"
                 size="icon"
-                title={voiceEnabled ? "Mute Coach Nova's voice" : "Enable Coach Nova's voice"}
+                title={voiceEnabled ? `Mute ${coachName}'s voice` : `Enable ${coachName}'s voice`}
                 onClick={() => {
                   if (voiceEnabled) window.speechSynthesis.cancel();
                   setVoiceEnabled((v) => !v);

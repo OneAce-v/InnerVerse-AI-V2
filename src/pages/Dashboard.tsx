@@ -54,15 +54,14 @@ import { useNavigate } from "react-router";
 import { PageLoader } from "../components/ui/skeleton.tsx";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 
-const mockWeeklyData = [
-  { name: "Mon", hdi: 70 },
-  { name: "Tue", hdi: 75 },
-  { name: "Wed", hdi: 73 },
-  { name: "Thu", hdi: 78 },
-  { name: "Fri", hdi: 80 },
-  { name: "Sat", hdi: 84 },
-  { name: "Sun", hdi: 85 },
+// The snapshot cards are views onto Digital Twin domains, not scores of their own.
+const METRIC_DOMAIN: Record<string, string> = { fitness: "exercise", sleep: "recovery", nutrition: "nutrition" };
+const TWIN_DOMAINS = [
+  "physical", "nutrition", "exercise", "recovery", "sleep", "stress", "mental", "emotional",
+  "yoga", "meditation", "habit", "learning", "career", "financial", "social", "purpose",
 ];
+const METRIC_LABEL: Record<string, string> = { fitness: "Fitness", sleep: "Recovery", nutrition: "Nutrition" };
+const DAY_MS = 86_400_000;
 
 export default function Dashboard() {
   const { getToken, user } = useAuth();
@@ -78,6 +77,12 @@ export default function Dashboard() {
 
   // Progressive disclosure states
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
+
+  // Real Digital Twin state and tracked logs behind the snapshot cards and wellness ring
+  const [twin, setTwin] = useState<any>(null);
+  const [twinHistory, setTwinHistory] = useState<any[]>([]);
+  const [exerciseLogs, setExerciseLogs] = useState<any[]>([]);
+  const [foodLogs, setFoodLogs] = useState<any[]>([]);
 
   // Proactive Briefings & Recommendations from Multi-Agent Supervisor
   const [briefings, setBriefings] = useState<any>(null);
@@ -180,13 +185,13 @@ export default function Dashboard() {
       id: 2,
       name: "Upper Body Workout",
       status: "pending",
-      desc: "Based on recovery state",
+      desc: "A short strength session",
     },
     {
       id: 3,
       name: "Log First Meal",
       status: "pending",
-      desc: "You have not logged meals today",
+      desc: "Log any meal today",
     },
   ]);
 
@@ -285,6 +290,21 @@ export default function Dashboard() {
           );
         })
         .catch((err) => console.error("Failed to fetch quest status:", err));
+
+      const authed = { headers: { Authorization: `Bearer ${token}` } };
+      Promise.all([
+        fetch("/api/digital-twin", authed).then((res) => res.json()),
+        fetch("/api/digital-twin/history", authed).then((res) => res.json()),
+        fetch("/api/track/exercise", authed).then((res) => res.json()),
+        fetch("/api/track/food", authed).then((res) => res.json()),
+      ])
+        .then(([twinData, historyData, exerciseData, foodData]) => {
+          setTwin(twinData.twin || null);
+          setTwinHistory(historyData.history || []);
+          setExerciseLogs(exerciseData.logs || []);
+          setFoodLogs(foodData.logs || []);
+        })
+        .catch((err) => console.error("Failed to fetch Digital Twin data:", err));
     } catch (e) {
       console.error(e);
     } finally {
@@ -298,21 +318,54 @@ export default function Dashboard() {
 
   if (loading) return <PageLoader rows={4} />;
 
-  let hdiScore = 82; // Base mock score
-  if (profile) {
-    if (profile.stressLevel) hdiScore -= (profile.stressLevel - 5) * 2;
-    if (profile.sleepQuality === "Excellent") hdiScore += 8;
-    if (profile.sleepQuality === "Poor") hdiScore -= 8;
-    if (
-      profile.activityLevel === "Very Active" ||
-      profile.activityLevel === "Extremely Active"
-    )
-      hdiScore += 8;
-    hdiScore = Math.max(0, Math.min(100, hdiScore));
-  }
+  const hdiScore: number | null = twin?.overallHealthIndex?.score ?? null;
+  const domainScore = (metric: string): number | null => twin?.[METRIC_DOMAIN[metric]]?.score ?? null;
+  const twinStates = TWIN_DOMAINS.map((d) => twin?.[d]).filter(Boolean);
+  const progressPercent = twinStates.length
+    ? Math.round(
+        (100 * twinStates.reduce((sum: number, s: any) => sum + s.score, 0)) /
+          twinStates.reduce((sum: number, s: any) => sum + (s.targetScore || 100), 0),
+      )
+    : 0;
+  const streakDays: number = profile?.streakDays ?? 0;
+  const missingSources: string[] = twin?.researchMetadata?.missingDataSources || [];
+  const profileOnly = ["FoodLogs", "ExerciseLogs", "JournalEntries"].every((s) => missingSources.includes(s));
 
-  const streakDays = profile?.streakDays || 12;
-  const progressPercent = 74;
+  const metricDetail = (metric: string) => {
+    const domain = METRIC_DOMAIN[metric];
+    const now = Date.now();
+    // Latest snapshot per day over the last 14 days (history arrives newest-first).
+    const byDay = new Map<string, number>();
+    for (const snap of twinHistory) {
+      const at = new Date(snap.createdAt);
+      if (now - at.getTime() > 14 * DAY_MS) break;
+      const day = at.toISOString().slice(5, 10);
+      const score = snap.fullTwinState?.[domain]?.score;
+      if (typeof score === "number" && !byDay.has(day)) byDay.set(day, score);
+    }
+    const series = [...byDay.entries()].reverse().map(([name, score]) => ({ name, score }));
+    const trend = series.length >= 2 ? series[series.length - 1].score - series[0].score : null;
+
+    const within7d = (log: any) => now - new Date(log.createdAt).getTime() <= 7 * DAY_MS;
+    const today = new Date().toISOString().slice(0, 10);
+    let stat: { label: string; value: string };
+    if (metric === "fitness") {
+      const days = new Set(exerciseLogs.filter(within7d).map((l) => new Date(l.createdAt).toISOString().slice(0, 10)));
+      stat = { label: "Active days (7d)", value: `${days.size} of 7` };
+    } else if (metric === "sleep") {
+      stat = { label: "Reported sleep", value: profile?.sleepDuration || "Not set" };
+    } else {
+      const kcal = foodLogs
+        .filter((l) => new Date(l.createdAt).toISOString().slice(0, 10) === today)
+        .reduce((sum, l) => sum + (l.calories || 0), 0);
+      stat = { label: "Logged today", value: kcal > 0 ? `${kcal.toLocaleString()} kcal` : "No meals yet" };
+    }
+    return { state: twin?.[domain], series, trend, stat };
+  };
+  const detail = expandedMetric ? metricDetail(expandedMetric) : null;
+  const mealsToday = foodLogs.filter(
+    (l) => new Date(l.createdAt).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10),
+  ).length;
 
   const toggleMetric = (metricId: string) => {
     setExpandedMetric((prev) => (prev === metricId ? null : metricId));
@@ -595,7 +648,7 @@ export default function Dashboard() {
               Progress Snapshot
             </h3>
             <span className="text-sm text-muted-foreground font-medium bg-muted px-2 py-1 rounded-md">
-              {streakDays} Day Streak 🔥
+              {streakDays > 0 ? `${streakDays} Day Streak 🔥` : "No streak yet - log something today"}
             </span>
           </div>
 
@@ -619,7 +672,7 @@ export default function Dashboard() {
                     Fitness
                   </p>
                   <p className="text-2xl font-black">
-                    82
+                    {domainScore("fitness") ?? "—"}
                     <span className="text-base font-normal text-muted-foreground">
                       /100
                     </span>
@@ -647,7 +700,7 @@ export default function Dashboard() {
                     Recovery
                   </p>
                   <p className="text-2xl font-black">
-                    94
+                    {domainScore("sleep") ?? "—"}
                     <span className="text-base font-normal text-muted-foreground">
                       /100
                     </span>
@@ -675,7 +728,7 @@ export default function Dashboard() {
                     Nutrition
                   </p>
                   <p className="text-2xl font-black">
-                    68
+                    {domainScore("nutrition") ?? "—"}
                     <span className="text-base font-normal text-muted-foreground">
                       /100
                     </span>
@@ -698,17 +751,17 @@ export default function Dashboard() {
                 <Card className="border-border bg-card/80">
                   <CardContent className="p-6">
                     <div className="flex justify-between items-center mb-6">
-                      <h4 className="text-lg font-bold capitalize">
-                        {expandedMetric} Details
+                      <h4 className="text-lg font-bold">
+                        {METRIC_LABEL[expandedMetric]} Details
                       </h4>
-                      <Button variant="outline" size="sm">
-                        Open Full Report <TrendingUp className="w-4 h-4 ml-2" />
+                      <Button variant="outline" size="sm" onClick={() => navigate("/twin")}>
+                        Open Digital Twin <TrendingUp className="w-4 h-4 ml-2" />
                       </Button>
                     </div>
-                    {/* Minimalist Chart placeholder */}
+                    {detail && detail.series.length >= 2 ? (
                     <div className="h-48 w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={mockWeeklyData}>
+                        <LineChart data={detail.series}>
                           <XAxis
                             dataKey="name"
                             stroke="#888888"
@@ -738,7 +791,7 @@ export default function Dashboard() {
                           />
                           <Line
                             type="monotone"
-                            dataKey="hdi"
+                            dataKey="score"
                             stroke={
                               expandedMetric === "fitness"
                                 ? "var(--color-secondary)"
@@ -753,30 +806,32 @@ export default function Dashboard() {
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
+                    ) : (
+                      <div className="h-48 w-full flex items-center justify-center text-center text-sm text-muted-foreground border border-dashed border-border rounded-xl px-6">
+                        Not enough history for a trend yet. The chart fills in once your Digital Twin has been recalibrated on at least two different days.
+                      </div>
+                    )}
                     <div className="mt-4 grid grid-cols-3 gap-4 border-t border-border pt-4">
                       <div>
-                        <p className="text-xs text-muted-foreground">
-                          Weekly Average
-                        </p>
+                        <p className="text-xs text-muted-foreground">{detail?.stat.label}</p>
+                        <p className="font-semibold">{detail?.stat.value}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Trend (14d)</p>
+                        {detail?.trend == null ? (
+                          <p className="font-semibold text-muted-foreground">No history yet</p>
+                        ) : (
+                          <p className={`font-semibold flex items-center gap-1 ${detail.trend > 0 ? "text-green-500" : detail.trend < 0 ? "text-red-500" : ""}`}>
+                            {detail.trend > 0 && <TrendingUp className="w-3 h-3" />}
+                            {detail.trend > 0 ? `+${detail.trend}` : detail.trend} pts
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Twin target</p>
                         <p className="font-semibold">
-                          {expandedMetric === "fitness"
-                            ? "4 Days/Wk"
-                            : expandedMetric === "sleep"
-                              ? "6.8 Hrs"
-                              : "1.8k Cal"}
+                          {detail?.state ? `${detail.state.targetScore} (gap ${detail.state.gap})` : "—"}
                         </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Trend</p>
-                        <p className="font-semibold text-green-500 flex items-center gap-1">
-                          <TrendingUp className="w-3 h-3" /> +12%
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">
-                          Goal Alignment
-                        </p>
-                        <p className="font-semibold">On Track</p>
                       </div>
                     </div>
                   </CardContent>
@@ -815,7 +870,7 @@ export default function Dashboard() {
                     strokeWidth="8"
                     strokeLinecap="round"
                     strokeDasharray="283"
-                    strokeDashoffset={283 - (283 * hdiScore) / 100}
+                    strokeDashoffset={283 - (283 * (hdiScore ?? 0)) / 100}
                     className="transition-all duration-1000 ease-out"
                   />
                 </svg>
@@ -823,13 +878,21 @@ export default function Dashboard() {
                   <span className="text-xs font-bold text-primary uppercase tracking-wider mb-1">
                     Wellness
                   </span>
-                  <span className="text-5xl font-black">{hdiScore}</span>
+                  <span className="text-5xl font-black">{hdiScore ?? "—"}</span>
                 </div>
               </div>
 
+              {twin && (
+                <p className="text-xs text-center text-muted-foreground mb-4 leading-relaxed">
+                  {profileOnly
+                    ? "Estimated from your profile only. Log meals, workouts, or a journal entry to calibrate it."
+                    : `Digital Twin health index from ${twin.researchMetadata?.numDataSourcesUsed ?? 1} data sources${missingSources.length ? ` (not yet: ${missingSources.join(", ")})` : ""}.`}
+                </p>
+              )}
+
               <div className="w-full space-y-2">
                 <div className="flex justify-between text-sm font-medium">
-                  <span className="text-muted-foreground">Goal Progress</span>
+                  <span className="text-muted-foreground">Progress to Twin targets</span>
                   <span>{progressPercent}%</span>
                 </div>
                 <Progress value={progressPercent} className="h-2" />
@@ -838,18 +901,12 @@ export default function Dashboard() {
           </Card>
 
           {/* Daily Quests Layer */}
+          {profile?.preferences?.gamificationEnabled !== false && (
           <div className="space-y-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <Target className="w-5 h-5 text-primary" /> Daily Quests
               </h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 text-muted-foreground hover:text-foreground"
-              >
-                View All
-              </Button>
             </div>
 
             <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-3">
@@ -880,7 +937,9 @@ export default function Dashboard() {
                         {q.name}
                       </p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {q.desc}
+                        {q.id === 3 && mealsToday > 0
+                          ? `${mealsToday} meal${mealsToday === 1 ? "" : "s"} logged today`
+                          : q.desc}
                       </p>
                     </div>
                   </div>
@@ -888,6 +947,7 @@ export default function Dashboard() {
               ))}
             </motion.div>
           </div>
+          )}
 
           <div className="pt-4 flex justify-end">
             <Button 
@@ -930,7 +990,7 @@ export default function Dashboard() {
               <div className="space-y-6">
                 <div>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    Your **Wellness Score** (Holistic Health Index) is calculated via weightings of your biometric inputs and lifestyle tracking records. Use the simulator below to forecast how improving different health metrics will optimize your daily readiness.
+                    Your <strong>Wellness Score</strong> is your Digital Twin's Overall Health Index: a weighted average of its 16 domain scores, recalibrated from your profile and tracked logs. The simulator below is a separate what-if model for exploring habit changes, not your recorded score.
                   </p>
                 </div>
 
@@ -950,7 +1010,9 @@ export default function Dashboard() {
                       <span className="text-xs font-bold px-2 py-1 rounded bg-secondary/10 text-secondary uppercase">
                         {Math.round((simSleep / 10) * 40 + (10 - simStress) * 3 + (simHydration / 8) * 15 + (simActiveMinutes / 60) * 15) >= 83 ? "Optimal State" : Math.round((simSleep / 10) * 40 + (10 - simStress) * 3 + (simHydration / 8) * 15 + (simActiveMinutes / 60) * 15) >= 70 ? "Balanced State" : "Recovery Required"}
                       </span>
-                      <p className="text-xs text-muted-foreground">Forecasted increase: {Math.max(0, Math.round((simSleep / 10) * 40 + (10 - simStress) * 3 + (simHydration / 8) * 15 + (simActiveMinutes / 60) * 15) - hdiScore)}%</p>
+                      {hdiScore !== null && (
+                        <p className="text-xs text-muted-foreground">Vs. your current index ({hdiScore}): {Math.round((simSleep / 10) * 40 + (10 - simStress) * 3 + (simHydration / 8) * 15 + (simActiveMinutes / 60) * 15) - hdiScore >= 0 ? "+" : ""}{Math.round((simSleep / 10) * 40 + (10 - simStress) * 3 + (simHydration / 8) * 15 + (simActiveMinutes / 60) * 15) - hdiScore} pts</p>
+                      )}
                     </div>
                   </div>
                 </div>

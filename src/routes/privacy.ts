@@ -39,8 +39,11 @@ router.post("/api/export", requireAuth, async (req: AuthRequest, res) => {
 router.post("/api/privacy", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-    const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
     const { action } = req.body;
+    if (action !== "update_settings" && action !== "delete") {
+      return res.status(400).json({ error: 'action must be "update_settings" or "delete"' });
+    }
+    const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
 
     await db.insert(auditLogs).values({
       userId: userResult.id,

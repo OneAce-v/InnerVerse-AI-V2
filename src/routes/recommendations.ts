@@ -7,6 +7,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { getDigitalTwin } from "../db/digitalTwinService.ts";
 import { runSupervisor } from "../agents/supervisor.ts";
 import { generateContentWithRetry } from "../lib/gemini.ts";
+import { nonEmptyString } from "../lib/validation.ts";
 
 const router = express.Router();
 
@@ -175,7 +176,8 @@ router.get("/api/briefings", requireAuth, async (req: AuthRequest, res) => {
 router.post("/api/simulation", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-    const { query } = req.body;
+    const query = nonEmptyString(req.body.query);
+    if (!query) return res.status(400).json({ error: "query must be a non-empty string" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
     const digitalTwin = await getDigitalTwin(userResult.id);
 
@@ -202,15 +204,8 @@ Return a JSON object with the following structure:
 ]
 }`;
 
-    let simulationResult: any = {
-      hdi: "72/100 (+2)",
-      timeline: "14 days",
-      confidence: 85,
-      riskLevel: "Low",
-      explanation: "Consistent execution of this action initiates positive compounding effects across the nervous system.",
-      domainChanges: [{ domain: "physical", change: 3 }]
-    };
-
+    // No canned fallback: a fixed score/confidence shown for any question would be a fabricated prediction.
+    let simulationResult: any;
     try {
       const response = await generateContentWithRetry({
         model: "gemini-2.5-flash",
@@ -221,7 +216,8 @@ Return a JSON object with the following structure:
       });
       simulationResult = JSON.parse(response.text || "{}");
     } catch (e) {
-      console.warn("Simulation gemini error fallback:", e);
+      console.warn("[Simulation] Gemini unavailable:", e);
+      return res.status(502).json({ error: "The AI simulation engine is unavailable right now, so no prediction was made. Please try again later." });
     }
 
     res.json({ simulation: simulationResult });
@@ -246,9 +242,10 @@ router.get("/api/recommendations", requireAuth, async (req: AuthRequest, res) =>
 router.post("/api/omnibar", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) return Object.assign(res.status(401), { json: () => {} }).json({ error: "Unauthorized" });
-    const { query } = req.body;
+    const query = nonEmptyString(req.body.query);
+    if (!query) return res.status(400).json({ error: "query must be a non-empty string" });
     const userResult = await getOrCreateUser(req.user.uid, req.user.email || "");
-    
+
     const profileResult = await db.select().from(profiles).where(eq(profiles.userId, userResult.id));
     const userProfile: any = profileResult[0] || {};
     
@@ -265,7 +262,7 @@ Answer naturally and directly in 1-2 short sentences. Do not use markdown. If it
       answer = response.text || "";
     } catch (e) {
       console.warn("[Omnibar Fallback] Gemini API unavailable, using offline response:", e);
-      answer = `To monitor your health index and progress, review the 16-Domain Digital Twin. Keep logging your meals and exercise to train your twin!`;
+      answer = `The AI assistant is offline right now, so I can't answer that specifically. Meanwhile, your Digital Twin page shows your current scores and what's driving them.`;
     }
 
     res.json({ answer });

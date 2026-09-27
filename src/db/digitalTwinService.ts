@@ -1,6 +1,6 @@
 import { db } from "./index.ts";
 import { digitalTwins, digitalTwinSnapshots, profiles, foodLogs, exerciseLogs, journalEntries, users, cognitiveMemory, wearableConnections } from "./schema.ts";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import { GoogleGenAI } from "@google/genai";
 import { executeSpecialist, executeConsolidatedSpecialists } from "../agents/specialists.ts";
 import { recordAiCall } from "../lib/aiMetrics.ts";
@@ -555,28 +555,107 @@ function compileEvidenceConfidence(recentFoodCount: number, recentExerciseCount:
  * Triggers an AI-powered holistic recalibration of the user's entire digital twin.
  * This aggregates user profile details and recent log telemetry to synthesize accurate states using Gemini.
  */
-export async function recalibrateDigitalTwin(userId: number, triggerSource: string = "manual_recalibrate"): Promise<DigitalTwinModel> {
+type RuleEngineLogs = {
+  food: { createdAt: Date | null; calories: number | null }[];
+  exercise: { createdAt: Date | null; exercise: string; durationMins: number | null }[];
+  journal: { createdAt: Date | null; sentiment: string | null }[];
+};
+
+/**
+ * Deterministic fallback when Gemini is unavailable. Scores are computed from the
+ * activity in the 7 days before `asOf` (14 for yoga) - not incremented from the previous
+ * score - so recalibrating repeatedly on the same data gives the same answer. Domains
+ * with no data in the window keep their current value: missing data isn't zero activity.
+ */
+export function computeRuleEngineStates(current: DigitalTwinModel, logs: RuleEngineLogs, asOf: Date): Record<string, any> {
+  const DAY = 86_400_000;
+  const within = (d: Date | null, days: number) => !!d && d.getTime() <= asOf.getTime() && asOf.getTime() - d.getTime() < days * DAY;
+  const dayKey = (d: Date | null) => d!.toISOString().slice(0, 10);
+  const clamp = (n: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, n)));
+
+  const exercise7 = logs.exercise.filter((e) => within(e.createdAt, 7));
+  const activeDays = new Set(exercise7.map((e) => dayKey(e.createdAt))).size;
+  const minutes = exercise7.reduce((s, e) => s + (e.durationMins || 0), 0);
+  const yoga14 = logs.exercise.filter((e) => within(e.createdAt, 14) && /yoga/i.test(e.exercise)).length;
+  const food7 = logs.food.filter((f) => within(f.createdAt, 7));
+  const mealDays = new Set(food7.map((f) => dayKey(f.createdAt))).size;
+  const mealsPerDay = mealDays ? food7.length / mealDays : 0;
+  const kcalPerDay = mealDays ? Math.round(food7.reduce((s, f) => s + (f.calories || 0), 0) / mealDays) : 0;
+  const journal14 = logs.journal.filter((j) => within(j.createdAt, 14)).slice(0, 5);
+  const sentimentSum = journal14.reduce((s, j) => s + (j.sentiment === "Positive" ? 1 : j.sentiment === "Negative" ? -1 : 0), 0);
+  const journalDays7 = new Set(logs.journal.filter((j) => within(j.createdAt, 7)).map((j) => dayKey(j.createdAt))).size;
+
+  const computed: Record<string, { score: number; points: number; evidence: string } | null> = {
+    exercise: exercise7.length ? {
+      score: clamp(40 + activeDays * 5 + Math.min(minutes, 300) / 12, 30, 95), points: exercise7.length,
+      evidence: `${activeDays} active day(s) and ${minutes} workout minutes in the last 7 days.`,
+    } : null,
+    physical: exercise7.length ? {
+      score: clamp(50 + activeDays * 5, 30, 90), points: exercise7.length,
+      evidence: `${activeDays} active day(s) in the last 7 days.`,
+    } : null,
+    yoga: yoga14 ? {
+      score: clamp(40 + yoga14 * 6, 30, 90), points: yoga14,
+      evidence: `${yoga14} yoga session(s) in the last 14 days.`,
+    } : null,
+    nutrition: food7.length ? {
+      score: clamp(40 + mealDays * 5 + (mealsPerDay >= 3 ? 10 : mealsPerDay >= 2 ? 5 : 0) + (kcalPerDay >= 1400 && kcalPerDay <= 2600 ? 5 : 0), 30, 95),
+      points: food7.length,
+      evidence: `Meals logged on ${mealDays} of the last 7 days, ${mealsPerDay.toFixed(1)} per day, about ${kcalPerDay} kcal/day.`,
+    } : null,
+    emotional: journal14.length ? {
+      score: clamp(62 + sentimentSum * 6, 30, 92), points: journal14.length,
+      evidence: `Last ${journal14.length} journal entries: ${journal14.filter((j) => j.sentiment === "Positive").length} positive, ${journal14.filter((j) => j.sentiment === "Negative").length} negative.`,
+    } : null,
+    mental: journalDays7 ? {
+      score: clamp(55 + journalDays7 * 5, 30, 90), points: journalDays7,
+      evidence: `Journaled on ${journalDays7} of the last 7 days.`,
+    } : null,
+  };
+
+  const states: Record<string, any> = {};
+  for (const key of Object.keys(DEPENDENCY_MODEL)) {
+    const cur: any = (current as any)[key] || { score: 65, targetScore: 85, confidence: 50 };
+    const c = computed[key];
+    states[key] = {
+      score: c ? c.score : cur.score,
+      trend: c ? (c.score > cur.score + 1 ? "up" : c.score < cur.score - 1 ? "down" : "stable") : cur.trend || "stable",
+      confidence: c ? clamp(50 + c.points * 4, 50, 90) : cur.confidence ?? 50,
+      supportingEvidence: c ? `Rule engine: ${c.evidence}` : cur.supportingEvidence || "Profile questionnaire answers",
+      aiSummary: c ? `Scored by the offline rule engine from tracked activity (AI unavailable): ${c.evidence}` : cur.aiSummary || "",
+      targetScore: cur.targetScore || 85,
+      priority: cur.priority || "Medium",
+      expectedImprovement: cur.expectedImprovement || "+1.5/week",
+      estimatedTime: cur.estimatedTime || "6 weeks",
+      contributions: cur.contributions || DEFAULT_CONTRIBUTIONS,
+      confidenceBreakdown: cur.confidenceBreakdown || DEFAULT_CONFIDENCE_BREAKDOWN,
+    };
+  }
+  return states;
+}
+
+export async function recalibrateDigitalTwin(userId: number, triggerSource: string = "manual_recalibrate", asOf: Date = new Date()): Promise<DigitalTwinModel> {
   const startTime = Date.now();
   try {
-    // 1. Fetch user data context
+    // 1. Fetch user data context (only data that existed at `asOf`)
     const profileResult = await db.select().from(profiles).where(eq(profiles.userId, userId));
     const userProfile: any = profileResult[0] || {};
 
     const recentFood = await db.select()
       .from(foodLogs)
-      .where(eq(foodLogs.userId, userId))
+      .where(and(eq(foodLogs.userId, userId), lte(foodLogs.createdAt, asOf)))
       .orderBy(desc(foodLogs.createdAt))
       .limit(10);
 
     const recentExercise = await db.select()
       .from(exerciseLogs)
-      .where(eq(exerciseLogs.userId, userId))
+      .where(and(eq(exerciseLogs.userId, userId), lte(exerciseLogs.createdAt, asOf)))
       .orderBy(desc(exerciseLogs.createdAt))
       .limit(10);
 
     const recentJournal = await db.select()
       .from(journalEntries)
-      .where(eq(journalEntries.userId, userId))
+      .where(and(eq(journalEntries.userId, userId), lte(journalEntries.createdAt, asOf)))
       .orderBy(desc(journalEntries.createdAt))
       .limit(10);
 
@@ -736,69 +815,15 @@ Generate the output as a clean, standardized JSON object where keys are EXACTLY 
       });
       parsedStates = JSON.parse(response.text || "{}");
     } catch (e) {
-      console.warn("[Digital Twin Recalibration Fallback] Gemini API unavailable, generating deterministic heuristic states:", e);
+      console.warn("[Digital Twin Recalibration Fallback] Gemini API unavailable, using the rule engine:", e);
       fallbackUsed = true;
-      parsedStates = {};
-      
-      const validKeys = [
-        "physical", "nutrition", "exercise", "recovery", "sleep", "stress",
-        "mental", "emotional", "yoga", "meditation", "habit", "learning",
-        "career", "financial", "social", "purpose"
-      ];
-
-      for (const key of validKeys) {
-        const cur = (currentStates as any)[key] || { score: 65, targetScore: 85 };
-        let score = cur.score || 65;
-        let trend = cur.trend || "stable";
-        let supportingEvidence = cur.supportingEvidence || "Profile questionnaire answers";
-        let aiSummary = cur.aiSummary || `Evaluation synchronized under system normal parameters.`;
-
-        if (key === "nutrition" && recentFood.length > 0) {
-          score = Math.min(95, score + 2);
-          trend = "up";
-          supportingEvidence = `Heuristic track: Registered ${recentFood.length} recent nutritional food log(s).`;
-          aiSummary = `Nutritional compliance remains healthy. Successfully processed recent meal inputs including ${recentFood[0].item}.`;
-        } else if (key === "exercise" && recentExercise.length > 0) {
-          score = Math.min(95, score + 3);
-          trend = "up";
-          supportingEvidence = `Heuristic track: Logged ${recentExercise.length} workout(s) in active timeline.`;
-          aiSummary = `Physical workout load of ${recentExercise[0].exercise} was successfully logged and digested by the Twin.`;
-        } else if (key === "physical" && recentExercise.length > 0) {
-          score = Math.min(95, score + 1);
-          trend = "stable";
-          supportingEvidence = `Consistent movement tracking loaded.`;
-          aiSummary = `Physical core systems activated through structured exercise.`;
-        } else if (key === "emotional" && recentJournal.length > 0) {
-          const sent = recentJournal[0].sentiment;
-          if (sent === "Positive") {
-            score = Math.min(95, score + 3);
-            trend = "up";
-          } else if (sent === "Negative") {
-            score = Math.max(30, score - 3);
-            trend = "down";
-          }
-          supportingEvidence = `Heuristic track: Journal entry analyzed with dominant mood: ${recentJournal[0].mood}.`;
-          aiSummary = `Emotional balance tracked in real-time. Recent reflection details state as ${recentJournal[0].mood}.`;
-        } else if (key === "mental" && recentJournal.length > 0) {
-          score = Math.min(95, score + 1);
-          supportingEvidence = `Mindfulness logging verified through consistent journal reflections.`;
-          aiSummary = `Executive function and cognitive clarity supported by reflective writing habits.`;
-        }
-
-        parsedStates[key] = {
-          score,
-          trend,
-          confidence: Math.min(100, (cur.confidence || 75) + 1),
-          supportingEvidence,
-          aiSummary,
-          targetScore: cur.targetScore || 85,
-          priority: cur.priority || "Medium",
-          expectedImprovement: cur.expectedImprovement || "+1.5/week",
-          estimatedTime: cur.estimatedTime || "6 weeks",
-          contributions: cur.contributions || DEFAULT_CONTRIBUTIONS,
-          confidenceBreakdown: cur.confidenceBreakdown || DEFAULT_CONFIDENCE_BREAKDOWN
-        };
-      }
+      const since = new Date(asOf.getTime() - 14 * 86_400_000);
+      const [windowFood, windowExercise, windowJournal] = await Promise.all([
+        db.select().from(foodLogs).where(and(eq(foodLogs.userId, userId), gte(foodLogs.createdAt, since), lte(foodLogs.createdAt, asOf))),
+        db.select().from(exerciseLogs).where(and(eq(exerciseLogs.userId, userId), gte(exerciseLogs.createdAt, since), lte(exerciseLogs.createdAt, asOf))),
+        db.select().from(journalEntries).where(and(eq(journalEntries.userId, userId), gte(journalEntries.createdAt, since), lte(journalEntries.createdAt, asOf))).orderBy(desc(journalEntries.createdAt)),
+      ]);
+      parsedStates = computeRuleEngineStates(currentStates, { food: windowFood, exercise: windowExercise, journal: windowJournal }, asOf);
     }
     
     // Ensure all 16 states are present, fall back to current states if any are missing
@@ -819,7 +844,7 @@ Generate the output as a clean, standardized JSON object where keys are EXACTLY 
           score,
           trend: item.trend || finalStates[key]?.trend || "stable",
           confidence: item.confidence !== undefined ? Math.min(100, Math.max(0, item.confidence)) : (finalStates[key]?.confidence ?? 70),
-          lastUpdated: new Date().toISOString(),
+          lastUpdated: asOf.toISOString(),
           supportingEvidence: item.supportingEvidence || finalStates[key]?.supportingEvidence || "Profile questionnaire answers",
           aiSummary: item.aiSummary || finalStates[key]?.aiSummary || "",
           

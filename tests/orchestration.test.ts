@@ -68,13 +68,14 @@ describe("POST /api/orchestration/tasks/:id/complete", () => {
 });
 
 describe("POST /api/orchestration/decision", () => {
-  it("returns a structured decision even without a real Gemini key", async () => {
+  // Runs with a placeholder Gemini key: the route must fail clearly instead of returning
+  // the same canned Accept/Decline analysis regardless of what was asked.
+  it("refuses to invent an analysis when the AI is unavailable", async () => {
     const uid = await createTestUser("orch-decision");
-    const res = await apiPost("/api/orchestration/decision", uid, { query: "Should I take the new job?" });
+    const res = await apiPost("/api/orchestration/decision", uid, { query: "Should I adopt a dog?" });
 
-    expect(res.status).toBe(200);
-    expect(res.body.decision.optionA).toBeDefined();
-    expect(res.body.decision.optionB).toBeDefined();
-    expect(typeof res.body.decision.recommendation).toBe("string");
+    expect(res.status).toBe(502);
+    expect(res.body.decision).toBeUndefined();
+    expect(res.body.error).toMatch(/unavailable/i);
   });
 });

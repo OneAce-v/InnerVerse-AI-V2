@@ -43,6 +43,7 @@ export const profiles = pgTable('profiles', {
   waterIntake: text('water_intake'),
   mealFrequency: text('meal_frequency'),
   healthRestrictions: jsonb('health_restrictions'), // array
+  preferences: jsonb('preferences'), // coach persona, gamification toggle, dietary strategy (see routes/profile.ts)
 
   // AI Generated Archetypes
   fitnessArchetype: text('fitness_archetype'),
