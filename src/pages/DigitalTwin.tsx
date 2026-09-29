@@ -96,6 +96,7 @@ export default function DigitalTwin() {
   
   // Data states
   const [twin, setTwin] = useState<any>(null);
+  const [wearables, setWearables] = useState<any[]>([]);
   const [selectedTwinKey, setSelectedTwinKey] = useState<string>("physical");
   const [recalibrating, setRecalibrating] = useState(false);
   const [timeline, setTimeline] = useState<any[]>([]);
@@ -153,12 +154,13 @@ export default function DigitalTwin() {
       if (!token) return;
       
       setLoadingHistory(true);
-      const [timelineRes, badgesRes, profileRes, twinRes, historyRes] = await Promise.all([
+      const [timelineRes, badgesRes, profileRes, twinRes, historyRes, wearablesRes] = await Promise.all([
         fetch("/api/timeline", { headers: { Authorization: `Bearer ${token}` } }),
         fetch("/api/badges", { headers: { Authorization: `Bearer ${token}` } }),
         fetch("/api/profile", { headers: { Authorization: `Bearer ${token}` } }),
         fetch("/api/digital-twin", { headers: { Authorization: `Bearer ${token}` } }),
-        fetch("/api/digital-twin/history", { headers: { Authorization: `Bearer ${token}` } })
+        fetch("/api/digital-twin/history", { headers: { Authorization: `Bearer ${token}` } }),
+        fetch("/api/wearables", { headers: { Authorization: `Bearer ${token}` } })
       ]);
       
       const timelineData = await timelineRes.json();
@@ -166,6 +168,7 @@ export default function DigitalTwin() {
       const profileData = await profileRes.json();
       const twinData = await twinRes.json();
       const historyData = await historyRes.json();
+      const wearablesData = await wearablesRes.json();
       
       if (timelineData.timeline) setTimeline(timelineData.timeline);
       if (badgesData.badges) {
@@ -173,7 +176,8 @@ export default function DigitalTwin() {
         if (badgesData.stats) setStats(badgesData.stats);
       }
       if (profileData.profile) setProfile(profileData.profile);
-      if (twinData.twin && twinData.twin.states) setTwin(twinData.twin.states);
+      if (twinData.twin) setTwin(twinData.twin);
+      if (wearablesData.connections) setWearables(wearablesData.connections.filter((c: any) => c.connected));
       if (historyData.history) setHistory(historyData.history);
     } catch (err) {
       console.error("Error loading twin database telemetry:", err);
@@ -196,8 +200,8 @@ export default function DigitalTwin() {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.twin && data.twin.states) {
-          setTwin(data.twin.states);
+        if (data.twin) {
+          setTwin(data.twin);
           setSuccessToast("Digital Twin Recalibrated with Explainable AI!");
           setTimeout(() => setSuccessToast(null), 4000);
           
@@ -258,14 +262,14 @@ export default function DigitalTwin() {
   // Helper level details
   const getLevelThresholds = (lvl: number) => {
     switch (lvl) {
-      case 1: return { min: 0, max: 100, reward: "Unlocks AI Meal Scanner" };
-      case 2: return { min: 100, max: 250, reward: "Unlocks Bedtime Breath Guides" };
-      case 3: return { min: 250, max: 500, reward: "Unlocks Custom Workouts" };
-      case 4: return { min: 500, max: 1000, reward: "Unlocks Community Creation" };
-      case 5: return { min: 1000, max: 2000, reward: "Unlocks Sovereign Bio-Profile" };
-      case 6: return { min: 2000, max: 3500, reward: "Unlocks Weekly Boss Challenges" };
-      case 7: return { min: 3500, max: 5000, reward: "Unlocks Deep Sleep Prediction" };
-      default: return { min: 5000, max: 10000, reward: "Maximum Level Unlocked" };
+      case 1: return { min: 0, max: 100 };
+      case 2: return { min: 100, max: 250 };
+      case 3: return { min: 250, max: 500 };
+      case 4: return { min: 500, max: 1000 };
+      case 5: return { min: 1000, max: 2000 };
+      case 6: return { min: 2000, max: 3500 };
+      case 7: return { min: 3500, max: 5000 };
+      default: return { min: 5000, max: 10000 };
     }
   };
 
@@ -401,23 +405,15 @@ export default function DigitalTwin() {
             <div className="absolute top-0 right-0 w-36 h-36 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
             <CardHeader className="items-center text-center pb-2">
               <div className="w-28 h-28 rounded-full border-4 border-primary/40 p-1 relative mb-4">
-                <img
-                  src={`https://api.dicebear.com/7.x/shapes/svg?seed=${user?.uid || "twin"}&backgroundColor=c0aede`}
-                  alt="Twin Biomarker Graph"
-                  className="w-full h-full object-cover rounded-full"
-                />
-                <div className="absolute -bottom-1 -right-1 bg-green-500 border-2 border-card w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white" title="Wearables live telemetry active">
-                  ●
+                <div className="w-full h-full rounded-full bg-primary/10 flex items-center justify-center">
+                  <Activity className="w-12 h-12 text-primary" />
                 </div>
               </div>
               <CardTitle className="text-xl font-black tracking-tight font-sans">
                 {user?.displayName?.split(" ")[0] || "User"}'s Health Twin
               </CardTitle>
               <CardDescription className="flex items-center gap-1.5 mt-1 justify-center">
-                <span>Biometric Signature: Archetype Synthesized</span>
-                <Badge variant="outline" className="text-green-500 border-green-500/20 bg-green-500/5 text-[10px] rounded-full uppercase tracking-widest font-black">
-                  LIVE
-                </Badge>
+                <span>Calibrated by {twin?.researchMetadata?.modelVersion || "baseline initializer"}</span>
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -428,13 +424,13 @@ export default function DigitalTwin() {
                     <PolarGrid stroke="#888888" opacity={0.2} />
                     <PolarAngleAxis
                       dataKey="subject"
-                      tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11, fontWeight: 500 }}
+                      tick={{ fill: "var(--muted-foreground)", fontSize: 11, fontWeight: 500 }}
                     />
                     <Radar
                       name="Biometrics"
                       dataKey="A"
-                      stroke="hsl(var(--primary))"
-                      fill="hsl(var(--primary))"
+                      stroke="var(--primary)"
+                      fill="var(--primary)"
                       fillOpacity={0.3}
                     />
                   </RadarChart>
@@ -445,15 +441,15 @@ export default function DigitalTwin() {
               <div className="space-y-3 pt-3 border-t border-border">
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-muted-foreground flex items-center gap-1.5">
-                    <HeartPulse className="w-4 h-4 text-red-500" /> Recovery Efficiency
+                    <HeartPulse className="w-4 h-4 text-red-500" /> Recovery Score
                   </span>
-                  <span className="font-bold text-green-500">Optimal ({15 * stats.streak + 70}%)</span>
+                  <span className="font-bold text-green-500">{twin?.recovery?.score ?? "—"}/100</span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-muted-foreground flex items-center gap-1.5">
-                    <SlidersHorizontal className="w-4 h-4 text-amber-500" /> Twin Matching Accuracy
+                    <SlidersHorizontal className="w-4 h-4 text-amber-500" /> Data Sources Used
                   </span>
-                  <span className="font-bold text-primary">94.2%</span>
+                  <span className="font-bold text-primary">{twin?.researchMetadata?.numDataSourcesUsed ?? 1} of 4</span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-muted-foreground flex items-center gap-1.5">
@@ -527,8 +523,8 @@ export default function DigitalTwin() {
               <div className="bg-muted/40 rounded-xl p-3 border border-border/60 flex items-start gap-3 mt-4 text-sm">
                 <Sparkles className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold text-xs text-foreground uppercase tracking-widest">Next Unlock</p>
-                  <p className="text-muted-foreground text-xs mt-0.5">{thresholds.reward}</p>
+                  <p className="font-bold text-xs text-foreground uppercase tracking-widest">Next Level</p>
+                  <p className="text-muted-foreground text-xs mt-0.5">{Math.max(0, thresholds.max - currentXP)} XP to Level {currentLevel + 1}, earned from quests and logging.</p>
                 </div>
               </div>
             </CardContent>
@@ -540,37 +536,18 @@ export default function DigitalTwin() {
               <CardTitle className="text-lg font-bold">Linked Sensors</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center">
-                    <img
-                      src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Google_Fit_icon_%282018%29.svg/512px-Google_Fit_icon_%282018%29.svg.png"
-                      className="w-5 h-5 object-contain"
-                      alt="Google Fit"
-                    />
-                  </div>
-                  <span className="font-bold text-sm">Google Fit API</span>
+              {wearables.length ? wearables.map((w) => (
+                <div key={w.id} className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
+                  <span className="font-bold text-sm capitalize">{String(w.provider).replace("_", " ")}</span>
+                  <Badge variant="outline" className="text-[10px] text-green-500 bg-green-500/10 border-green-500/20 rounded-full font-black">
+                    CONNECTED
+                  </Badge>
                 </div>
-                <Badge variant="outline" className="text-[10px] text-green-500 bg-green-500/10 border-green-500/20 rounded-full font-black">
-                  CONNECTED
-                </Badge>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center p-1">
-                    <img
-                      src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/Health_Connect_Icon.svg/512px-Health_Connect_Icon.svg.png"
-                      className="w-6 h-6 object-contain"
-                      alt="Health Connect"
-                    />
-                  </div>
-                  <span className="font-bold text-sm">Apple Health Connect</span>
-                </div>
-                <button className="text-[10px] font-bold border border-border hover:bg-muted bg-card text-muted-foreground px-3 py-1 rounded-lg transition-colors">
-                  CONNECT
-                </button>
-              </div>
+              )) : (
+                <p className="text-sm text-muted-foreground">
+                  No wearables connected. Connect one from Smart Track to add it as a data source.
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>

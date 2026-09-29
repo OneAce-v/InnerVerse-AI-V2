@@ -32,7 +32,7 @@ import { EmptyState } from "../components/ui/empty-state.tsx";
 import { PageLoader } from "../components/ui/skeleton.tsx";
 import { useNavigate } from "react-router";
 
-const MACRO_COLORS = ["hsl(var(--primary))", "#f97316", "#eab308"];
+const MACRO_COLORS = ["var(--primary)", "#f97316", "#eab308"];
 
 export default function Analytics() {
   const { getToken } = useAuth();
@@ -174,16 +174,16 @@ export default function Analytics() {
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      borderColor: "hsl(var(--border))",
+                      backgroundColor: "var(--card)",
+                      borderColor: "var(--border)",
                       borderRadius: "8px",
                     }}
-                    itemStyle={{ color: "hsl(var(--foreground))" }}
+                    itemStyle={{ color: "var(--foreground)" }}
                   />
                   <Bar
                     dataKey="caloriesIn"
                     name="In (Consumed)"
-                    fill="hsl(var(--primary))"
+                    fill="var(--primary)"
                     radius={[4, 4, 0, 0]}
                   />
                   <Bar
@@ -234,19 +234,19 @@ export default function Analytics() {
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      borderColor: "hsl(var(--border))",
+                      backgroundColor: "var(--card)",
+                      borderColor: "var(--border)",
                       borderRadius: "8px",
                     }}
-                    itemStyle={{ color: "hsl(var(--foreground))" }}
+                    itemStyle={{ color: "var(--foreground)" }}
                   />
                   <Line
                     type="monotone"
                     dataKey="net"
                     name="Net Balance"
-                    stroke="hsl(var(--secondary))"
+                    stroke="var(--secondary)"
                     strokeWidth={3}
-                    dot={{ r: 4, fill: "hsl(var(--secondary))" }}
+                    dot={{ r: 4, fill: "var(--secondary)" }}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -292,11 +292,11 @@ export default function Analytics() {
                 <Legend />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    borderColor: "hsl(var(--border))",
+                    backgroundColor: "var(--card)",
+                    borderColor: "var(--border)",
                     borderRadius: "8px",
                   }}
-                  itemStyle={{ color: "hsl(var(--foreground))" }}
+                  itemStyle={{ color: "var(--foreground)" }}
                 />
               </PieChart>
             </ResponsiveContainer>
