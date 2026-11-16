@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import path from "path";
+import { createServer as createHttpServer } from "http";
 import rateLimit from "express-rate-limit";
 import { createServer as createViteServer } from "vite";
 import { recordRequestMetric } from "./src/lib/requestMetrics.ts";
@@ -31,7 +32,7 @@ import developerRoutes from "./src/routes/developer.ts";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // A base64 camera frame is routinely several hundred KB, far past express.json()'s
   // 100kb default; registered first so this route's body is parsed with the higher limit.
@@ -146,10 +147,19 @@ async function startServer() {
 
   // Demo mode accepts the test sign-in token, so it must not be reachable from other
   // machines on the network: bind it to this computer only.
-  const HOST = process.env.VITE_DEMO_UID ? "127.0.0.1" : "0.0.0.0";
-  return app.listen(PORT, HOST, () => {
+  const demoMode = Boolean(process.env.VITE_DEMO_UID);
+  const server = app.listen(PORT, demoMode ? "127.0.0.1" : "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+  if (demoMode) {
+    // Browsers may resolve "localhost" to the IPv6 loopback first, so answer there too.
+    // Best effort: IPv6 can be switched off on a machine.
+    const ipv6 = createHttpServer(app);
+    ipv6.on("error", () => {});
+    ipv6.listen(PORT, "::1");
+    server.on("close", () => ipv6.close());
+  }
+  return server;
 }
 
 // Exported so the test suite can await startup and close the listener during teardown

@@ -17,7 +17,7 @@
 import "dotenv/config";
 import { fork } from "node:child_process";
 import { rmSync } from "node:fs";
-import { createServer } from "node:net";
+import { connect, createServer } from "node:net";
 import path from "node:path";
 
 const DEMO_UID = "demo-user";
@@ -49,14 +49,35 @@ const freePort = () =>
     });
   });
 
-// Checked before the slower steps so a second copy of the app fails with a clear message.
-await new Promise<void>((resolve) => {
-  const probe = createServer();
-  probe.once("error", (error: NodeJS.ErrnoException) =>
-    fail(error.code === "EADDRINUSE" ? "Port 3000 is already in use. Close the other program using it (often another copy of this app, in another terminal window) and try again." : error.message),
-  );
-  probe.listen(3000, "127.0.0.1", () => probe.close(() => resolve()));
-});
+// A port counts as free only if nothing answers on either loopback address and we can
+// bind it. (On Windows another program listening on all addresses does not stop us from
+// binding 127.0.0.1, but the browser could still reach that program through "localhost".)
+const answers = (host: string, port: number) =>
+  new Promise<boolean>((resolve) => {
+    const socket = connect({ host, port });
+    const done = (result: boolean) => {
+      socket.destroy();
+      resolve(result);
+    };
+    socket.setTimeout(500, () => done(false));
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+  });
+const canBind = (port: number) =>
+  new Promise<boolean>((resolve) => {
+    const probe = createServer();
+    probe.once("error", () => resolve(false));
+    probe.listen(port, "127.0.0.1", () => probe.close(() => resolve(true)));
+  });
+const isFree = async (port: number) => !(await answers("127.0.0.1", port)) && !(await answers("::1", port)) && (await canBind(port));
+
+let appPort = 0;
+for (let port = 3000; port <= 3010 && !appPort; port++) {
+  if (await isFree(port)) appPort = port;
+}
+if (!appPort) fail("Ports 3000 to 3010 are all in use. Close other copies of this app and try again.");
+if (appPort !== 3000) step(`Port 3000 is being used by another program, so the demo will run on port ${appPort}.`);
+process.env.PORT = String(appPort);
 
 let closeEmbedded: (() => Promise<void>) | null = null;
 
@@ -158,7 +179,7 @@ step(hasAiKey ? "GEMINI_API_KEY found: AI features will call Gemini." : "No GEMI
 const { serverReady } = await import("../server.ts");
 const httpServer = await serverReady;
 const announce = () =>
-  console.log(`\n[demo] InnerVerse AI is running in demo mode. Open http://localhost:3000 in your browser.\n[demo] Press Ctrl+C here to stop.\n`);
+  console.log(`\n[demo] InnerVerse AI is running in demo mode. Open http://localhost:${appPort} in your browser.\n[demo] Press Ctrl+C here to stop.\n`);
 if (httpServer.listening) announce();
 else httpServer.once("listening", announce);
 

@@ -21,8 +21,9 @@ npm install
 npm run demo
 ```
 
-Then open <http://localhost:3000>. `npm run demo` (`scripts/demo.ts`) starts the whole
-app on one computer:
+Then open the address it prints (<http://localhost:3000>, or the next free port if
+another program is using 3000). `npm run demo` (`scripts/demo.ts`) starts the whole app
+on one computer:
 
 - **Database:** an embedded PostgreSQL ([PGlite](https://pglite.dev), the PostgreSQL
   engine compiled to WebAssembly) stored in `.demo-db/`. The app talks to it through
