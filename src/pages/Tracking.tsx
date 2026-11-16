@@ -8,6 +8,7 @@ import { Activity } from "lucide-react";
 import { useAuth } from "../AuthContext.tsx";
 import { PageHeader } from "../components/ui/page-header.tsx";
 import { staggerContainer, staggerItem } from "@/lib/motion";
+import { todaysMacroTotals } from "@/lib/dailyTotals";
 
 // Sub-components
 import HabitTracker from "../components/tracking/HabitTracker.tsx";
@@ -54,10 +55,7 @@ export default function Tracking() {
     fetchLogs();
   }, [getToken]);
 
-  const totalCalories = foodLogs.reduce((acc, log) => acc + (log.calories || 0), 0);
-  const totalProtein = foodLogs.reduce((acc, log) => acc + (log.protein || 0), 0);
-  const totalCarbs = foodLogs.reduce((acc, log) => acc + (log.carbs || 0), 0);
-  const totalFats = foodLogs.reduce((acc, log) => acc + (log.fats || 0), 0);
+  const { calories: totalCalories, protein: totalProtein, carbs: totalCarbs, fats: totalFats } = todaysMacroTotals(foodLogs);
 
   return (
     <motion.div
@@ -77,7 +75,7 @@ export default function Tracking() {
         <Card className="border-border bg-card/60">
           <CardContent className="p-4 flex flex-col justify-center h-full">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
-              Calories
+              Calories today
             </p>
             <p className="text-2xl font-black">
               {totalCalories}{" "}
@@ -100,7 +98,7 @@ export default function Tracking() {
         <Card className="border-border bg-card/60">
           <CardContent className="p-4 flex flex-col justify-center h-full">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
-              Protein
+              Protein today
             </p>
             <p className="text-2xl font-black">
               {totalProtein}g{" "}
@@ -123,7 +121,7 @@ export default function Tracking() {
         <Card className="border-border bg-card/60">
           <CardContent className="p-4 flex flex-col justify-center h-full">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
-              Carbs
+              Carbs today
             </p>
             <p className="text-2xl font-black">
               {totalCarbs}g{" "}
@@ -144,7 +142,7 @@ export default function Tracking() {
         <Card className="border-border bg-card/60">
           <CardContent className="p-4 flex flex-col justify-center h-full">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
-              Fats
+              Fats today
             </p>
             <p className="text-2xl font-black">
               {totalFats}g{" "}

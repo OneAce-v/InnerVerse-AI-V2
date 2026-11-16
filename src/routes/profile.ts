@@ -7,6 +7,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { recalibrateDigitalTwin } from "../db/digitalTwinService.ts";
 import { generateContentWithRetry } from "../lib/gemini.ts";
 import { calculateLevel, computeStreak } from "../lib/serverHelpers.ts";
+import { PRACTICE_PREFERENCE_OPTIONS } from "../lib/catalogs.ts";
 
 const router = express.Router();
 
@@ -52,6 +53,11 @@ function normalizePreferences(raw: unknown): { value?: Record<string, unknown>; 
   if (p.dietaryStrategy !== undefined) {
     if (typeof p.dietaryStrategy !== "string") return { error: "dietaryStrategy must be a string" };
     out.dietaryStrategy = p.dietaryStrategy;
+  }
+  for (const [key, options] of Object.entries(PRACTICE_PREFERENCE_OPTIONS)) {
+    if (p[key] === undefined) continue;
+    if (!(options as readonly string[]).includes(p[key] as string)) return { error: `Unknown ${key}` };
+    out[key] = p[key];
   }
   return { value: out };
 }

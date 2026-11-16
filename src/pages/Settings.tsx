@@ -22,6 +22,7 @@ import {
 import { Switch } from "../components/ui/switch.tsx";
 import { Badge } from "../components/ui/badge.tsx";
 import { motion, AnimatePresence } from "motion/react";
+import { PRACTICE_PREFERENCE_OPTIONS, PracticePreferenceKey } from "@/lib/catalogs";
 import {
   User,
   Palette,
@@ -72,6 +73,13 @@ const categories = [
   { id: "accessibility", name: "Accessibility", icon: Accessibility },
   { id: "twin", name: "Digital Twin Settings", icon: Network },
   { id: "diagnostics", name: "Interactive Feature Test Suite", icon: Shield },
+];
+
+const PRACTICE_FIELDS: { key: PracticePreferenceKey; label: string }[] = [
+  { key: "yogaStyle", label: "Primary Yoga Style" },
+  { key: "meditationStyle", label: "Meditation Style" },
+  { key: "breathingPractice", label: "Breathing Practice (Pranayama) Preference" },
+  { key: "spiritualFocus", label: "Spiritual Focus" },
 ];
 
 export default function Settings() {
@@ -1155,93 +1163,29 @@ export default function Settings() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Primary Yoga Style</Label>
-                  <Select defaultValue="Hatha">
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[
-                        "Hatha",
-                        "Vinyasa Flow",
-                        "Ashtanga",
-                        "Iyengar",
-                        "Yin Yoga",
-                        "Restorative",
-                      ].map((d) => (
-                        <SelectItem key={d} value={d}>
-                          {d}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Meditation Style</Label>
-                  <Select defaultValue="Mindfulness">
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[
-                        "Mindfulness",
-                        "Vipassana",
-                        "Transcendental",
-                        "Loving-Kindness (Metta)",
-                        "Zen",
-                        "Sound Bath",
-                      ].map((d) => (
-                        <SelectItem key={d} value={d}>
-                          {d}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Breathing Practice (Pranayama) Preference</Label>
-                  <Select defaultValue="Relaxation">
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[
-                        "Energy & Heat (Kapalabhati)",
-                        "Balance (Nadi Shodhana)",
-                        "Relaxation (Box Breathing)",
-                        "None",
-                      ].map((d) => (
-                        <SelectItem key={d} value={d}>
-                          {d}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Spiritual Focus</Label>
-                  <Select defaultValue="Secular/Physical">
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[
-                        "Secular/Physical",
-                        "Chakra Alignment",
-                        "Mantra-based",
-                        "Holistic Mind-Body Connection",
-                      ].map((d) => (
-                        <SelectItem key={d} value={d}>
-                          {d}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  Saved to your profile and passed to your AI coach, so its yoga, breathing and meditation suggestions match what you practise. These do not change any Digital Twin score.
+                </p>
+                {PRACTICE_FIELDS.map(({ key, label }) => (
+                  <div className="space-y-2" key={key}>
+                    <Label>{label}</Label>
+                    <Select
+                      value={settings[key] || ""}
+                      onValueChange={(v) => handleSettingChange(key, v)}
+                    >
+                      <SelectTrigger aria-label={label}>
+                        <SelectValue placeholder="Not set" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PRACTICE_PREFERENCE_OPTIONS[key].map((d) => (
+                          <SelectItem key={d} value={d}>
+                            {d}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
               </CardContent>
             </Card>
           </div>

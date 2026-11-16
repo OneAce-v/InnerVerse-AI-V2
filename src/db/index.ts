@@ -7,6 +7,8 @@ const { Pool } = pg;
 export const createPool = () => {
   return new Pool({
     host: process.env.SQL_HOST,
+    // Optional: only needed when PostgreSQL is not on its default port (5432).
+    port: Number(process.env.SQL_PORT) || undefined,
     user: process.env.SQL_USER,
     password: process.env.SQL_PASSWORD,
     database: process.env.SQL_DB_NAME,

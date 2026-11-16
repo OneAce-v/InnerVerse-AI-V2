@@ -3,6 +3,7 @@ import { db } from "../src/db/index.ts";
 import { foodLogs, journalEntries } from "../src/db/schema.ts";
 import { computeStreak } from "../src/lib/serverHelpers.ts";
 import { computeRuleEngineStates, DEFAULT_TWIN_STATES } from "../src/db/digitalTwinService.ts";
+import { todaysMacroTotals } from "../src/lib/dailyTotals.ts";
 import { apiGet, apiPost, createTestUser, getUserId } from "./helpers.ts";
 
 const NOW = new Date("2026-09-27T15:00:00Z");
@@ -26,6 +27,24 @@ describe("computeStreak", () => {
 
   it("is 0 when the last activity was two days ago", () => {
     expect(computeStreak(["2026-09-25"], NOW)).toBe(0);
+  });
+});
+
+// Smart Track's summary cards used to add up every meal the API returned (the 20 most
+// recent, across several days) and show the sum as one day's intake against a daily target.
+describe("todaysMacroTotals", () => {
+  const now = new Date(2026, 8, 27, 15, 0);
+  const meal = (y: number, m: number, d: number, h: number, calories: number) =>
+    ({ createdAt: new Date(y, m, d, h).toISOString(), calories, protein: 10, carbs: 20, fats: 5 });
+
+  it("counts only the meals logged on the current local day", () => {
+    const logs = [meal(2026, 8, 27, 8, 400), meal(2026, 8, 27, 13, 550), meal(2026, 8, 26, 20, 700), meal(2026, 8, 20, 9, 300)];
+    expect(todaysMacroTotals(logs, now)).toEqual({ calories: 950, protein: 20, carbs: 40, fats: 10 });
+  });
+
+  it("is zero when nothing was logged today, and ignores rows with missing values", () => {
+    expect(todaysMacroTotals([meal(2026, 8, 26, 23, 700)], now)).toEqual({ calories: 0, protein: 0, carbs: 0, fats: 0 });
+    expect(todaysMacroTotals([{ createdAt: now, calories: null }, { calories: 500 }], now).calories).toBe(0);
   });
 });
 
@@ -121,6 +140,17 @@ describe("profile preferences", () => {
     expect(res.body.profile.preferences).toEqual(preferences);
   });
 
+  // The Yoga & Meditation dropdowns in Settings used to be decoration: nothing was saved.
+  it("persists the yoga and meditation preferences", async () => {
+    const uid = await createTestUser("prefs-practice");
+    const preferences = { yogaStyle: "Vinyasa Flow", meditationStyle: "Vipassana", breathingPractice: "Relaxation (Box Breathing)", spiritualFocus: "Secular/Physical" };
+    const save = await apiPost("/api/profile", uid, { preferences });
+    expect(save.status).toBe(200);
+
+    const res = await apiGet("/api/profile", uid);
+    expect(res.body.profile.preferences).toEqual(preferences);
+  });
+
   it("drops unknown preference keys", async () => {
     const uid = await createTestUser("prefs-unknown");
     await apiPost("/api/profile", uid, { preferences: { coachName: "Aria", isAdmin: true } });
@@ -130,7 +160,7 @@ describe("profile preferences", () => {
 
   it.each([
     [{ coachPersonality: "Sarcastic" }], [{ coachStyle: 5 }], [{ gamificationEnabled: "no" }],
-    [{ coachName: "x".repeat(41) }], ["not-an-object"],
+    [{ coachName: "x".repeat(41) }], ["not-an-object"], [{ yogaStyle: "Hot Yoga" }], [{ breathingPractice: 3 }],
   ])("rejects the invalid preferences %j", async (preferences) => {
     const uid = await createTestUser("prefs-bad");
     const res = await apiPost("/api/profile", uid, { preferences });

@@ -14,6 +14,39 @@ journaling, gamification, and a set of "autonomous systems" dashboards
 - **Auth:** Firebase Authentication (Google sign-in), verified server-side with Firebase Admin
 - **AI:** Google Gemini (`@google/genai`) for chat, recommendations, digital twin recalibration, food vision, and simulations
 
+## Quick demo (no PostgreSQL or Firebase setup)
+
+```bash
+npm install
+npm run demo
+```
+
+Then open <http://localhost:3000>. `npm run demo` (`scripts/demo.ts`) starts the whole
+app on one computer:
+
+- **Database:** an embedded PostgreSQL ([PGlite](https://pglite.dev), the PostgreSQL
+  engine compiled to WebAssembly) stored in `.demo-db/`. The app talks to it through
+  the same `pg` driver and Drizzle schema as a normal PostgreSQL server; the test suite
+  passes against both. To use your own PostgreSQL server instead, set `DEMO_DB=postgres`
+  in `.env` along with the `SQL_*` values below.
+- **Sign-in:** a local demo account, so no Firebase project is needed. The sidebar shows
+  a "Demo mode" label.
+- **Data:** the first run fills the account with three weeks of sample activity (see
+  "Load demo data" below). What you log afterwards is kept between runs.
+
+| Command | What it does |
+|---|---|
+| `npm run demo` | Start the demo, keeping whatever was logged last time |
+| `npm run demo:fresh` | Wipe the demo account and re-seed it so the history ends today |
+
+Optional `.env` values for the demo: `GEMINI_API_KEY` (without it the AI features use
+their offline fallbacks) and `DEMO_NAME` (the display name, default "Demo User").
+
+Demo mode is for demonstrations on your own machine only: it accepts the test sign-in
+token described under [Testing](#testing), so the server listens on `localhost` only
+in this mode. Deployments must use `npm run build` + `npm start`, where that sign-in is
+disabled.
+
 ## Getting started
 
 ### 1. Install dependencies
@@ -30,6 +63,7 @@ Copy `.env.example` to `.env` and fill in:
 |---|---|
 | `GEMINI_API_KEY` | Google Gemini API key used for all AI features |
 | `SQL_HOST`, `SQL_USER`, `SQL_PASSWORD`, `SQL_DB_NAME` | Postgres connection used by the running app |
+| `SQL_PORT` | Optional. Only needed when PostgreSQL is not on its default port, 5432 |
 | `SQL_ADMIN_USER`, `SQL_ADMIN_PASSWORD` | Credentials `drizzle-kit` uses to push schema changes (can match the values above) |
 
 Firebase Auth is configured separately via `firebase-applet-config.json` (client) and
@@ -44,6 +78,11 @@ npm run db:push
 
 Applies `src/db/schema.ts` to the Postgres database defined in your env vars. Re-run it
 after pulling schema changes (for example, the `profiles.preferences` column).
+
+On Windows, if PostgreSQL was installed on the wrong port or you no longer know the
+`postgres` password, `scripts/windows-postgres-setup.ps1` resets both (run it from an
+Administrator PowerShell; it backs up the two config files it edits). The quick demo
+above does not need this.
 
 ### 4. Run the dev server
 
@@ -66,6 +105,9 @@ empty. To fill an account with three weeks of realistic activity:
 npm run seed:demo -- you@gmail.com            # add --reset to replace existing activity
 ```
 
+(`npm run demo` does this for its own demo account automatically; `--create` makes the
+account as well, so nobody has to sign in first.)
+
 The seeded meals, workouts, and journal entries are synthetic (logs are marked
 `source = "demo-seed"`), but every Digital Twin state and snapshot is computed by the
 app's own recalibration engine, replayed day by day over only the data that existed on
@@ -76,6 +118,7 @@ instead of the offline rule engine; slower and uses quota).
 
 | Script | What it does |
 |---|---|
+| `npm run demo` / `npm run demo:fresh` | One-command local demo with an embedded database and demo sign-in (see "Quick demo") |
 | `npm run dev` | Start the app in development (Express + Vite middleware, HMR on) |
 | `npm run build` | Build the frontend (`vite build`) and bundle the server (`esbuild`) into `dist/` |
 | `npm start` | Run the production build (`dist/server.cjs`) |
@@ -99,8 +142,8 @@ npm test
 
 Tests authenticate via a `TEST_AUTH:<uid>` bearer token instead of a real Firebase ID
 token. That path in `src/middleware/auth.ts` only activates when `NODE_ENV=test`
-(which `npm test` sets automatically) — production deployments run with
-`NODE_ENV=production` and never accept it. See `tests/global-setup.ts` for how the
+(which `npm test` sets automatically, and `npm run demo` sets on purpose) — production
+deployments run with `NODE_ENV=production` and never accept it. See `tests/global-setup.ts` for how the
 server is started for the test run, and `tests/helpers.ts` for the test-user/auth
 helpers used across test files.
 
@@ -141,6 +184,10 @@ src/
 - **No reminders or push notifications.** Only in-app notifications exist (twin
   recalibration, subscription changes).
 - **No pose estimation.** Motion tracking is a manual logging form.
+- **Yoga & Meditation preferences are advisory.** They are saved on the profile and
+  given to the AI coach as context; no Digital Twin score is computed from them.
+- **Nutrition targets are fixed reference values** (2,200 kcal, 140 g protein, 250 g
+  carbs, 70 g fat); they are not personalised yet.
 
 The test suite (`tests/`) covers every API route, including a 401 check on all
 protected routes and edge-case input validation (`tests/edge-cases.test.ts`).

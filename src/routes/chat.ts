@@ -44,6 +44,12 @@ router.post("/api/agents/chat", requireAuth, async (req: AuthRequest, res) => {
 
     const prefs = userProfile.preferences || {};
     const coachName = prefs.coachName || "Coach Nova";
+    const practicePreferences = [
+      prefs.yogaStyle && `yoga style ${prefs.yogaStyle}`,
+      prefs.meditationStyle && `meditation style ${prefs.meditationStyle}`,
+      prefs.breathingPractice && `breathing practice ${prefs.breathingPractice}`,
+      prefs.spiritualFocus && `focus ${prefs.spiritualFocus}`,
+    ].filter(Boolean).join("; ");
     const systemInstruction = `You are "${coachName}", the AI Mentor and ambient companion for InnerVerse AI, an Explainable Agentic Generative AI Framework for Personalized Yoga, Meditation, Exercise and Nutrition Intelligence towards Holistic Human Development.
 You coordinate multiple agents (Wellness, Yoga, Meditation, Fitness, Nutrition, Sleep, Mental).
 
@@ -55,6 +61,7 @@ User Profile context:
 - Available Equipment: ${JSON.stringify(userProfile.availableEquipment || [])}
 - Stress Level: ${userProfile.stressLevel || 'unknown'}/10
 - Diet: ${userProfile.dietType || 'unknown'}${prefs.dietaryStrategy ? ` (strategy: ${prefs.dietaryStrategy})` : ''}
+- Yoga and meditation preferences: ${practicePreferences || 'not set'}
 
 Tracked context (from the user's real logs and Digital Twin):
 - Digital Twin overall health index: ${twin.overallHealthIndex?.score ?? 'not yet calibrated'}/100; weakest areas: ${weakestDomains || 'unknown'}

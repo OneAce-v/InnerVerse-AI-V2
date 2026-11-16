@@ -144,7 +144,10 @@ async function startServer() {
     });
   }
 
-  return app.listen(PORT, "0.0.0.0", () => {
+  // Demo mode accepts the test sign-in token, so it must not be reachable from other
+  // machines on the network: bind it to this computer only.
+  const HOST = process.env.VITE_DEMO_UID ? "127.0.0.1" : "0.0.0.0";
+  return app.listen(PORT, HOST, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

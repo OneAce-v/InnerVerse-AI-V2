@@ -12,6 +12,8 @@
     "lint": "tsc --noEmit",
     "db:push": "drizzle-kit push --config=src/db/drizzle.config.ts",
     "seed:demo": "tsx scripts/seed-demo.ts",
+    "demo": "tsx scripts/demo.ts",
+    "demo:fresh": "tsx scripts/demo.ts --fresh",
     "test": "vitest run"
   },
   "dependencies": {
@@ -43,6 +45,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.16",
+    "@electric-sql/pglite-socket": "0.2.19",
     "@firebase/eslint-plugin-security-rules": "^0.0.2",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",

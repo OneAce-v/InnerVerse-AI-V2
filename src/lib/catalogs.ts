@@ -16,3 +16,13 @@ export const STORE_CATALOG: Record<string, { title: string; cost: number; consum
   nova_voice: { title: "Nova Voice Module", cost: 500 },
   pro_analytics: { title: "Pro Analytics", cost: 1000 },
 };
+
+// Options for the Yoga & Meditation preferences in Settings. Shared by the Settings page
+// (which renders them) and POST /api/profile (which rejects anything else).
+export const PRACTICE_PREFERENCE_OPTIONS = {
+  yogaStyle: ["Hatha", "Vinyasa Flow", "Ashtanga", "Iyengar", "Yin Yoga", "Restorative"],
+  meditationStyle: ["Mindfulness", "Vipassana", "Transcendental", "Loving-Kindness (Metta)", "Zen", "Sound Bath"],
+  breathingPractice: ["Energy & Heat (Kapalabhati)", "Balance (Nadi Shodhana)", "Relaxation (Box Breathing)", "None"],
+  spiritualFocus: ["Secular/Physical", "Chakra Alignment", "Mantra-based", "Holistic Mind-Body Connection"],
+} as const;
+export type PracticePreferenceKey = keyof typeof PRACTICE_PREFERENCE_OPTIONS;

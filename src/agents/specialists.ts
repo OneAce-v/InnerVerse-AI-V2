@@ -13,6 +13,9 @@ const ai = new GoogleGenAI({
 });
 
 async function generateContentWithRetry(params: any, retries = 2, delay = 1000): Promise<any> {
+  // AI_OFFLINE=1 (set by scripts/seed-demo.ts) skips the network call, so callers take
+  // their rule-based fallback immediately instead of waiting on a request that must fail.
+  if (process.env.AI_OFFLINE === "1") throw new Error("AI_OFFLINE is set; using the rule-based fallback");
   const start = Date.now();
   for (let i = 0; i < retries; i++) {
     try {

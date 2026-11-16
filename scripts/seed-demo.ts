@@ -5,7 +5,9 @@
  *
  *   npm run seed:demo -- you@gmail.com            # an account you've signed into once
  *   npm run seed:demo -- you@gmail.com --reset    # replace that account's existing activity
- *   options: --days <n> (default 21), --use-ai (use GEMINI_API_KEY instead of the rule engine)
+ *   npm run seed:demo -- demo-user --create       # create the account too (used by `npm run demo`)
+ *   options: --days <n> (default 21), --name "<full name>" (with --create),
+ *            --use-ai (use GEMINI_API_KEY instead of the rule engine)
  *
  * Only the input activity (meals, workouts, journal entries, quest completions) is
  * synthetic, and it is marked: logs use source "demo-seed" and twin snapshots use
@@ -21,18 +23,24 @@ const option = (name: string) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const target = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--days");
+const target = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--days" && args[i - 1] !== "--name");
 const DAYS = Number(option("--days") ?? 21);
 const RESET = flag("--reset");
+const CREATE = flag("--create");
 
-if (!target || !Number.isInteger(DAYS) || DAYS < 3 || DAYS > 90) {
-  console.error("Usage: npm run seed:demo -- <email-or-uid> [--reset] [--days 3-90] [--use-ai]");
+if (!target || !Number.isInteger(DAYS) || DAYS < 3 || DAYS > 90 || (CREATE && target.includes("@"))) {
+  console.error("Usage: npm run seed:demo -- <email-or-uid> [--reset] [--create] [--name \"Full Name\"] [--days 3-90] [--use-ai]");
+  if (CREATE && target?.includes("@")) console.error("--create needs a uid (for example: demo-user), not an email address.");
   process.exit(1);
 }
 
 // Without --use-ai, recalibration runs on the app's deterministic rule engine: fast,
-// repeatable, and it doesn't spend Gemini quota on dozens of back-to-back calls.
-if (!flag("--use-ai")) process.env.GEMINI_API_KEY = "demo-seed-offline";
+// repeatable, works without internet, and doesn't spend Gemini quota on dozens of
+// back-to-back calls.
+if (!flag("--use-ai")) {
+  process.env.AI_OFFLINE = "1";
+  process.env.GEMINI_API_KEY ||= "demo-seed-offline";
+}
 
 const { db, pool } = await import("../src/db/index.ts");
 const schema = await import("../src/db/schema.ts");
@@ -108,9 +116,13 @@ const quiet = async <T,>(fn: () => Promise<T>): Promise<T> => {
 };
 
 async function main() {
-  const [user] = await db.select().from(users).where(
+  let [user] = await db.select().from(users).where(
     target!.includes("@") ? sql`lower(${users.email}) = ${target!.toLowerCase()}` : eq(users.uid, target!),
   );
+  if (!user && CREATE) {
+    // Same e-mail the demo sign-in reports for this uid (see src/middleware/auth.ts).
+    [user] = await db.insert(users).values({ uid: target!, email: `${target}@test.local`, fullName: option("--name") || "Demo User" }).returning();
+  }
   if (!user) {
     console.error(`No account found for "${target}". Sign in to the app once with that Google account, then re-run this command.`);
     process.exit(1);
@@ -137,7 +149,7 @@ async function main() {
   const [profile] = await db.select().from(profiles).where(eq(profiles.userId, userId));
   if (!profile) {
     await db.insert(profiles).values({
-      userId, age: 26, gender: "female", height: 165, weight: 62, occupation: "Software engineer",
+      userId, age: 26, height: 165, weight: 62, occupation: "Software engineer",
       sleepDuration: "6-7 hours", primaryGoal: "Improve fitness and reduce stress", fitnessLevel: "Intermediate",
       activityLevel: "Moderately Active", workoutExperience: "1-2 years", availableEquipment: ["Dumbbells", "Yoga Mat"],
       workoutLocation: "Home", availableDays: "5 days", sessionDuration: "30-45 minutes", sleepQuality: "Fair",

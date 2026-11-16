@@ -19,13 +19,14 @@ export const requireAuth = async (
 
   const token = authHeader.split('Bearer ')[1];
 
-  // Test-suite-only bypass: lets integration tests authenticate as an arbitrary user
+  // Test-suite and demo-mode bypass: lets integration tests (and `npm run demo`, which
+  // starts the server in this mode on localhost only) authenticate as an arbitrary user
   // without a real Firebase ID token. Gated on NODE_ENV, which production deployments
   // never set to 'test' (the app itself requires NODE_ENV=production to serve its
   // static build - see the app.use(express.static(...)) branch below in server.ts).
   if (process.env.NODE_ENV === 'test' && token.startsWith('TEST_AUTH:')) {
     const uid = token.slice('TEST_AUTH:'.length);
-    req.user = { uid, email: `${uid}@test.local`, name: 'Test User' } as unknown as DecodedIdToken;
+    req.user = { uid, email: `${uid}@test.local`, name: process.env.DEMO_NAME || 'Test User' } as unknown as DecodedIdToken;
     next();
     return;
   }
