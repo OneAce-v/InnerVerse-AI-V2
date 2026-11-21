@@ -48,6 +48,36 @@ token described under [Testing](#testing), so the server listens on `localhost` 
 in this mode. Deployments must use `npm run build` + `npm start`, where that sign-in is
 disabled.
 
+## Run it properly (real sign-in, your PostgreSQL, live Gemini)
+
+1. **Firebase:** in the [Firebase console](https://console.firebase.google.com) create a project
+   with a personal Google account, enable Authentication → Google, add a Web app, and copy its
+   config values into `firebase-applet-config.json` (`apiKey`, `authDomain`, `projectId`, `appId`, ...).
+   `localhost` is an authorized sign-in domain by default.
+2. **Gemini:** create a key at <https://aistudio.google.com/apikey>.
+3. **`.env`:** copy `.env.example` to `.env` and fill in `GEMINI_API_KEY` and the `SQL_*` values
+   (`SQL_ADMIN_*` can repeat them). Never commit `.env`.
+4. **PostgreSQL:** create the database named in `SQL_DB_NAME` (for example `innerverse_dev`).
+5. **Check everything:** `npm run doctor` tests each of the above and says what to fix.
+6. **Create the tables, then start:** `npm run db:push`, then `npm run dev`.
+
+If the app's port 3000 is taken, run it on another one: `$env:PORT=3001; npm run dev` (PowerShell).
+
+### Forgot the `postgres` password (Windows)
+
+Run these in an Administrator PowerShell; the PostgreSQL folder number (18 below) is your version.
+
+1. `Stop-Service postgresql-x64-18`
+2. Open `C:\Program Files\PostgreSQL\18\data\pg_hba.conf` in Notepad (as administrator) and, on the
+   lines ending in `127.0.0.1/32` and `::1/128`, change `scram-sha-256` to `trust`. Save.
+3. `Start-Service postgresql-x64-18`
+4. `& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -h localhost -p 5432 -c "ALTER USER postgres PASSWORD 'choose-a-password'"`
+   (use the port from `postgresql.conf`, the line `port = ...`).
+5. Change the two lines back to `scram-sha-256`, save, and `Restart-Service postgresql-x64-18`.
+6. Put the new password in `.env` as `SQL_PASSWORD` and `SQL_ADMIN_PASSWORD`.
+
+Leaving `trust` in place lets any program on your computer connect without a password, so do step 5.
+
 ## Getting started
 
 ### 1. Install dependencies
@@ -119,6 +149,7 @@ instead of the offline rule engine; slower and uses quota).
 
 | Script | What it does |
 |---|---|
+| `npm run doctor` | Check `.env`, Firebase config, PostgreSQL, the Gemini key and the port, and say what to fix |
 | `npm run demo` / `npm run demo:fresh` | One-command local demo with an embedded database and demo sign-in (see "Quick demo") |
 | `npm run dev` | Start the app in development (Express + Vite middleware, HMR on) |
 | `npm run build` | Build the frontend (`vite build`) and bundle the server (`esbuild`) into `dist/` |

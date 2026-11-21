@@ -12,6 +12,7 @@
     "lint": "tsc --noEmit",
     "db:push": "drizzle-kit push --config=src/db/drizzle.config.ts",
     "seed:demo": "tsx scripts/seed-demo.ts",
+    "doctor": "tsx scripts/doctor.ts",
     "demo": "tsx scripts/demo.ts",
     "demo:fresh": "tsx scripts/demo.ts --fresh",
     "test": "vitest run"
